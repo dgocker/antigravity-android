@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(
+class SettingsViewModel @JvmOverloads constructor(
     private val app: AntigravityApp = AntigravityApp.instance
 ) : ViewModel() {
 

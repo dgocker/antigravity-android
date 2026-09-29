@@ -45,7 +45,7 @@ fun AppNavigation() {
         startDestination = startDestination
     ) {
         composable(Screen.Connection.route) {
-            val connectionVm: ConnectionViewModel = viewModel()
+            val connectionVm: ConnectionViewModel = viewModel { ConnectionViewModel(AntigravityApp.instance) }
             ConnectionScreen(
                 viewModel = connectionVm,
                 onConnected = {
@@ -57,7 +57,7 @@ fun AppNavigation() {
         }
 
         composable(Screen.Chats.route) {
-            val chatsVm: ChatsViewModel = viewModel()
+            val chatsVm: ChatsViewModel = viewModel { ChatsViewModel(AntigravityApp.instance) }
             ChatsScreen(
                 viewModel = chatsVm,
                 onOpenChat = { chatId ->
@@ -94,7 +94,7 @@ fun AppNavigation() {
         }
 
         composable(Screen.Files.route) {
-            val filesVm: FilesViewModel = viewModel()
+            val filesVm: FilesViewModel = viewModel { FilesViewModel(AntigravityApp.instance) }
             FilesScreen(
                 viewModel = filesVm,
                 onOpenFile = { path ->
@@ -122,7 +122,7 @@ fun AppNavigation() {
         }
 
         composable(Screen.Settings.route) {
-            val settingsVm: SettingsViewModel = viewModel()
+            val settingsVm: SettingsViewModel = viewModel { SettingsViewModel(AntigravityApp.instance) }
             SettingsScreen(
                 viewModel = settingsVm,
                 onNavigateBack = { navController.popBackStack() },

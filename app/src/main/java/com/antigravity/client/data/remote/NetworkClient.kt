@@ -45,14 +45,29 @@ class NetworkClient(private val tokenStore: TokenStore) {
 
     fun getApi(): GatewayApi {
         var baseUrl = tokenStore.serverUrl.trim()
+        if (baseUrl.isBlank()) {
+            baseUrl = TokenStore.DEFAULT_SERVER_URL
+        }
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            baseUrl = "http://$baseUrl"
+        }
         if (!baseUrl.endsWith("/")) {
             baseUrl += "/"
         }
-        return Retrofit.Builder()
-            .baseUrl(baseUrl)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(GatewayApi::class.java)
+        return try {
+            Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .client(okHttpClient)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(GatewayApi::class.java)
+        } catch (e: Exception) {
+            Retrofit.Builder()
+                .baseUrl("${TokenStore.DEFAULT_SERVER_URL}/")
+                .client(okHttpClient)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(GatewayApi::class.java)
+        }
     }
 }

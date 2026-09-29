@@ -15,7 +15,7 @@ sealed class ConnectionUiState {
     data class Error(val message: String) : ConnectionUiState()
 }
 
-class ConnectionViewModel(
+class ConnectionViewModel @JvmOverloads constructor(
     private val app: AntigravityApp = AntigravityApp.instance
 ) : ViewModel() {
 

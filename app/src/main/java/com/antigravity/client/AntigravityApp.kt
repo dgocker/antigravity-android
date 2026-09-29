@@ -1,6 +1,7 @@
 package com.antigravity.client
 
 import android.app.Application
+import android.util.Log
 import com.antigravity.client.data.local.AppDatabase
 import com.antigravity.client.data.remote.NetworkClient
 import com.antigravity.client.data.repository.ChatRepository
@@ -32,26 +33,35 @@ class AntigravityApp : Application() {
         super.onCreate()
         instance = this
 
-        tokenStore = TokenStore(this)
-        database = AppDatabase.getInstance(this)
-        networkClient = NetworkClient(tokenStore)
-        chatRepository = ChatRepository(networkClient.getApi(), database)
-        fileRepository = FileRepository(networkClient.getApi(), database)
-        syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
+        try {
+            tokenStore = TokenStore(this)
+            database = AppDatabase.getInstance(this)
+            networkClient = NetworkClient(tokenStore)
+            chatRepository = ChatRepository(networkClient.getApi(), database)
+            fileRepository = FileRepository(networkClient.getApi(), database)
+            syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
 
-        // Automatically start sync if token is configured
-        if (tokenStore.hasToken()) {
-            syncEngine.start()
+            if (tokenStore.hasToken()) {
+                syncEngine.start()
+            }
+        } catch (e: Throwable) {
+            Log.e("AntigravityApp", "Error during app initialization: ${e.message}", e)
         }
     }
 
     fun restartSyncEngine() {
-        syncEngine.stop()
-        networkClient = NetworkClient(tokenStore)
-        chatRepository = ChatRepository(networkClient.getApi(), database)
-        fileRepository = FileRepository(networkClient.getApi(), database)
-        syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
-        syncEngine.start()
+        try {
+            if (::syncEngine.isInitialized) {
+                syncEngine.stop()
+            }
+            networkClient = NetworkClient(tokenStore)
+            chatRepository = ChatRepository(networkClient.getApi(), database)
+            fileRepository = FileRepository(networkClient.getApi(), database)
+            syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
+            syncEngine.start()
+        } catch (e: Throwable) {
+            Log.e("AntigravityApp", "Error restarting sync engine: ${e.message}", e)
+        }
     }
 
     companion object {

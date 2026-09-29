@@ -9,7 +9,7 @@ import com.antigravity.client.domain.model.ModelOption
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-class ChatsViewModel(
+class ChatsViewModel @JvmOverloads constructor(
     private val app: AntigravityApp = AntigravityApp.instance
 ) : ViewModel() {
 
