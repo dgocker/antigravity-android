@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -154,13 +155,42 @@ fun ChatScreen(
     val isRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty()
     val listState = rememberLazyListState()
 
-    val bubbles = remember(steps) { processStepsToBubbles(steps) }
+    val allBubbles = remember(steps) { processStepsToBubbles(steps) }
 
-    // Auto-scroll to bottom when new items or live delta arrived
-    LaunchedEffect(bubbles.size, activeDeltaText.length) {
-        val total = bubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
+    // Pagination: start with 30 most recent messages to prevent lag and scrolling
+    var visibleLimit by remember { mutableIntStateOf(30) }
+    val displayedBubbles = remember(allBubbles, visibleLimit) {
+        if (allBubbles.size > visibleLimit) {
+            allBubbles.takeLast(visibleLimit)
+        } else {
+            allBubbles
+        }
+    }
+
+    var isInitialScrollDone by remember { mutableStateOf(false) }
+
+    // Instant jump to bottom on initial load, smooth scroll on new incoming messages
+    LaunchedEffect(displayedBubbles.size, activeDeltaText.length) {
+        val total = displayedBubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
         if (total > 0) {
-            listState.animateScrollToItem(total - 1)
+            if (!isInitialScrollDone) {
+                listState.scrollToItem(total - 1)
+                isInitialScrollDone = true
+            } else {
+                listState.animateScrollToItem(total - 1)
+            }
+        }
+    }
+
+    // Scroll to bottom when keyboard opens so composer and last message are fully visible
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    LaunchedEffect(imeBottom) {
+        if (imeBottom > 0 && displayedBubbles.isNotEmpty()) {
+            val total = displayedBubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
+            if (total > 0) {
+                listState.scrollToItem(total - 1)
+            }
         }
     }
 
@@ -210,15 +240,20 @@ fun ChatScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface),
+                windowInsets = WindowInsets.statusBars
             )
         },
+        contentWindowInsets = WindowInsets.statusBars,
         containerColor = DarkBackground
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding()
+                .navigationBarsPadding()
         ) {
             // Error banner
             errorState?.let { err ->
@@ -247,7 +282,37 @@ fun ChatScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(bubbles, key = { it.key }) { bubble ->
+                // If there are more earlier messages, show "Load earlier messages" button
+                if (allBubbles.size > visibleLimit) {
+                    item(key = "load_earlier_btn") {
+                        val remaining = allBubbles.size - visibleLimit
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            TextButton(
+                                onClick = { visibleLimit += 30 },
+                                colors = ButtonDefaults.textButtonColors(contentColor = PrimaryBlue)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Load earlier messages ($remaining more)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(displayedBubbles, key = { it.key }) { bubble ->
                     when (bubble) {
                         is ConversationBubble.User -> UserBubble(bubble)
                         is ConversationBubble.Agent -> AgentBubble(bubble)
