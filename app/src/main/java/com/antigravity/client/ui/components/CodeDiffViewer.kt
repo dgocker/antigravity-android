@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,10 +32,14 @@ import com.antigravity.client.ui.theme.*
 fun CodeDiffViewer(
     diff: CodeDiff,
     modifier: Modifier = Modifier,
-    initiallyExpanded: Boolean = true
+    initiallyExpanded: Boolean = false
 ) {
-    var expanded by remember { mutableStateOf(initiallyExpanded) }
+    val diffKey = "${diff.file}_${diff.action}_${diff.startLine}"
+    var expanded by rememberSaveable(diffKey) { mutableStateOf(initiallyExpanded) }
     val context = LocalContext.current
+
+    val targetLinesCount = diff.targetContent?.lines()?.size ?: 0
+    val repLinesCount = diff.replacementContent?.lines()?.size ?: 0
 
     Card(
         modifier = modifier
@@ -84,6 +89,17 @@ fun CodeDiffViewer(
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1
                     )
+                    if (repLinesCount > 0 || targetLinesCount > 0) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (targetLinesCount > 0 && repLinesCount > 0) "+$repLinesCount -$targetLinesCount"
+                                   else if (repLinesCount > 0) "+$repLinesCount"
+                                   else "-$targetLinesCount",
+                            color = TextMuted,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {

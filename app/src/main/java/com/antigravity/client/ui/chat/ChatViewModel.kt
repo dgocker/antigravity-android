@@ -46,14 +46,18 @@ class ChatViewModel(
 
     val isCancelling = MutableStateFlow(false)
     val errorState = MutableStateFlow<String?>(null)
+    val isLoadingHistory = MutableStateFlow(true)
 
     init {
         // Load full step history from server
         viewModelScope.launch {
             try {
+                isLoadingHistory.value = true
                 repository.fetchStepsHistory(conversationId)
             } catch (e: Exception) {
                 // Ignore, will use cache
+            } finally {
+                isLoadingHistory.value = false
             }
         }
 

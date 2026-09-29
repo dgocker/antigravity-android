@@ -172,6 +172,7 @@ fun ChatScreen(
     val quotedSnippet by viewModel.quotedSnippet.collectAsStateWithLifecycle()
     val isCancelling by viewModel.isCancelling.collectAsStateWithLifecycle()
     val errorState by viewModel.errorState.collectAsStateWithLifecycle()
+    val isLoadingHistory by viewModel.isLoadingHistory.collectAsStateWithLifecycle()
 
     val isRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty()
     val listState = rememberLazyListState()
@@ -304,56 +305,120 @@ fun ChatScreen(
                 }
             }
 
-            // Steps & Messages list
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // If there are more earlier messages, show "Load earlier messages" button
-                if (allBubbles.size > visibleLimit) {
-                    item(key = "load_earlier_btn") {
-                        val remaining = allBubbles.size - visibleLimit
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            contentAlignment = Alignment.Center
+            // Top subtle loading indicator if history is loading in background and messages are visible
+            if (isLoadingHistory && displayedBubbles.isNotEmpty()) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp),
+                    color = PrimaryBlue,
+                    trackColor = DarkSurface
+                )
+            }
+
+            if (displayedBubbles.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isLoadingHistory) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            TextButton(
-                                onClick = { visibleLimit += 30 },
-                                colors = ButtonDefaults.textButtonColors(contentColor = PrimaryBlue)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowUp,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Load earlier messages ($remaining more)",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(36.dp),
+                                color = PrimaryBlue,
+                                strokeWidth = 3.dp
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Loading conversation history...",
+                                color = TextSecondary,
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = AppIcons.Send,
+                                contentDescription = null,
+                                tint = TextMuted,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No messages yet",
+                                color = TextSecondary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Send a prompt below to start working",
+                                color = TextMuted,
+                                fontSize = 13.sp
+                            )
                         }
                     }
                 }
-
-                items(displayedBubbles, key = { it.key }) { bubble ->
-                    when (bubble) {
-                        is ConversationBubble.User -> UserBubble(bubble)
-                        is ConversationBubble.Agent -> AgentBubble(bubble)
+            } else {
+                // Steps & Messages list
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // If there are more earlier messages, show "Load earlier messages" button
+                    if (allBubbles.size > visibleLimit) {
+                        item(key = "load_earlier_btn") {
+                            val remaining = allBubbles.size - visibleLimit
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                TextButton(
+                                    onClick = { visibleLimit += 30 },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = PrimaryBlue)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Load earlier messages ($remaining more)",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
 
-                // Live Streaming Delta Item
-                if (activeDeltaText.isNotEmpty()) {
-                    item(key = "live_stream_delta") {
-                        LiveStreamBubble(text = activeDeltaText)
+                    items(displayedBubbles, key = { it.key }) { bubble ->
+                        when (bubble) {
+                            is ConversationBubble.User -> UserBubble(bubble)
+                            is ConversationBubble.Agent -> AgentBubble(bubble)
+                        }
+                    }
+
+                    // Live Streaming Delta Item
+                    if (activeDeltaText.isNotEmpty()) {
+                        item(key = "live_stream_delta") {
+                            LiveStreamBubble(text = activeDeltaText)
+                        }
                     }
                 }
             }
