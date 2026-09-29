@@ -30,6 +30,9 @@ class ChatsViewModel @JvmOverloads constructor(
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError: StateFlow<String?> = _actionError.asStateFlow()
 
+    private val _isCreatingChat = MutableStateFlow(false)
+    val isCreatingChat: StateFlow<Boolean> = _isCreatingChat.asStateFlow()
+
     @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val conversations: StateFlow<List<Conversation>> = searchQuery
         .debounce(200)
@@ -84,6 +87,8 @@ class ChatsViewModel @JvmOverloads constructor(
         onSuccess: (String) -> Unit
     ) {
         viewModelScope.launch {
+            _isCreatingChat.value = true
+            _actionError.value = null
             try {
                 val resp = repository.createChat(
                     workspace = workspace.trim().ifEmpty { tokenStore.defaultWorkspace },
@@ -92,8 +97,10 @@ class ChatsViewModel @JvmOverloads constructor(
                     effort = effort,
                     mode = mode
                 )
+                _isCreatingChat.value = false
                 onSuccess(resp.conversationId)
             } catch (e: Exception) {
+                _isCreatingChat.value = false
                 _actionError.value = "Failed to create chat: ${e.localizedMessage ?: e.message}"
             }
         }

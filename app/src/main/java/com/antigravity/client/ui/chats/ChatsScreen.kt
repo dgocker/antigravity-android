@@ -37,6 +37,7 @@ fun ChatsScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val availableModels by viewModel.availableModels.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+    val isCreatingChat by viewModel.isCreatingChat.collectAsStateWithLifecycle()
 
     var showNewChatDialog by remember { mutableStateOf(false) }
 
@@ -173,10 +174,17 @@ fun ChatsScreen(
         NewChatDialog(
             defaultWorkspace = viewModel.tokenStore.defaultWorkspace,
             models = availableModels,
-            onDismiss = { showNewChatDialog = false },
+            isCreating = isCreatingChat,
+            errorMessage = actionError,
+            onDismiss = {
+                if (!isCreatingChat) {
+                    showNewChatDialog = false
+                    viewModel.clearActionError()
+                }
+            },
             onConfirm = { workspace, message, model, effort, mode ->
-                showNewChatDialog = false
                 viewModel.createChat(workspace, message, model, effort, mode) { newChatId ->
+                    showNewChatDialog = false
                     onOpenChat(newChatId)
                 }
             }
@@ -253,6 +261,8 @@ private fun ChatItemCard(
 fun NewChatDialog(
     defaultWorkspace: String,
     models: List<com.antigravity.client.domain.model.ModelOption>,
+    isCreating: Boolean,
+    errorMessage: String?,
     onDismiss: () -> Unit,
     onConfirm: (workspace: String, message: String, model: String?, effort: String?, mode: String?) -> Unit
 ) {
@@ -263,7 +273,7 @@ fun NewChatDialog(
     var selectedMode by remember { mutableStateOf("accept-edits") }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isCreating) onDismiss() },
         title = { Text("Start New Conversation", color = TextPrimary) },
         text = {
             Column(
@@ -275,6 +285,7 @@ fun NewChatDialog(
                     onValueChange = { workspace = it },
                     label = { Text("Workspace Path") },
                     singleLine = true,
+                    enabled = !isCreating,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -284,6 +295,7 @@ fun NewChatDialog(
                     label = { Text("Initial Prompt / Goal") },
                     minLines = 3,
                     maxLines = 5,
+                    enabled = !isCreating,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -293,7 +305,8 @@ fun NewChatDialog(
                     listOf("low", "medium", "high").forEach { effort ->
                         FilterChip(
                             selected = selectedEffort == effort,
-                            onClick = { selectedEffort = effort },
+                            onClick = { if (!isCreating) selectedEffort = effort },
+                            enabled = !isCreating,
                             label = { Text(effort.replaceFirstChar { it.uppercase() }) }
                         )
                     }
@@ -305,8 +318,39 @@ fun NewChatDialog(
                     listOf("plan", "accept-edits").forEach { mode ->
                         FilterChip(
                             selected = selectedMode == mode,
-                            onClick = { selectedMode = mode },
+                            onClick = { if (!isCreating) selectedMode = mode },
+                            enabled = !isCreating,
                             label = { Text(if (mode == "plan") "Plan" else "Accept Edits") }
+                        )
+                    }
+                }
+
+                if (!errorMessage.isNullOrBlank()) {
+                    Text(
+                        text = errorMessage,
+                        color = Color(0xFFEF5350),
+                        fontSize = 13.sp
+                    )
+                }
+
+                if (isCreating) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = PrimaryBlue
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Initializing Antigravity session...",
+                            color = TextSecondary,
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -315,19 +359,32 @@ fun NewChatDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (message.isNotBlank()) {
+                    if (message.isNotBlank() && !isCreating) {
                         onConfirm(workspace, message, selectedModel, selectedEffort, selectedMode)
                     }
                 },
-                enabled = message.isNotBlank(),
+                enabled = message.isNotBlank() && !isCreating,
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
             ) {
-                Text("Start")
+                if (isCreating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Starting...")
+                } else {
+                    Text("Start")
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = TextSecondary)
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isCreating
+            ) {
+                Text("Cancel", color = if (!isCreating) TextSecondary else TextMuted)
             }
         },
         containerColor = DarkSurface

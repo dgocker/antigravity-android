@@ -94,6 +94,21 @@ class ChatRepository(
             )
         )
 
+        // Pre-insert user prompt as step 0 so chat UI displays it immediately on opening
+        stepDao.insertOrUpdate(
+            StepEntity(
+                conversationId = resp.conversationId,
+                runId = resp.runId,
+                stepIndex = 0,
+                source = "USER_EXPLICIT",
+                type = "USER_INPUT",
+                status = "completed",
+                createdAt = now,
+                content = message,
+                userPrompt = message
+            )
+        )
+
         runDao.insertOrUpdate(
             RunEntity(
                 runId = resp.runId,
@@ -106,6 +121,45 @@ class ChatRepository(
         )
 
         return resp
+    }
+
+    private val pendingMessagesFlow = kotlinx.coroutines.flow.MutableStateFlow<Map<String, List<PendingUserMessage>>>(emptyMap())
+
+    fun observePendingMessages(conversationId: String): Flow<List<PendingUserMessage>> {
+        return pendingMessagesFlow.map { it[conversationId] ?: emptyList() }
+    }
+
+    fun addPendingMessage(conversationId: String, message: PendingUserMessage) {
+        val map = pendingMessagesFlow.value.toMutableMap()
+        val list = (map[conversationId] ?: emptyList()) + message
+        map[conversationId] = list
+        pendingMessagesFlow.value = map
+    }
+
+    fun updatePendingMessageStatus(conversationId: String, id: String, status: MessageDeliveryStatus) {
+        val map = pendingMessagesFlow.value.toMutableMap()
+        val list = (map[conversationId] ?: emptyList()).map {
+            if (it.id == id) it.copy(status = status) else it
+        }
+        map[conversationId] = list
+        pendingMessagesFlow.value = map
+    }
+
+    fun reconcilePendingMessages(conversationId: String, currentSteps: List<Step>) {
+        val map = pendingMessagesFlow.value.toMutableMap()
+        val list = map[conversationId] ?: return
+        val filtered = list.filter { pending ->
+            val matching = currentSteps.any { step ->
+                step.stepIndex > pending.baseStepIndex &&
+                (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") &&
+                (step.userPrompt?.trim() == pending.text.trim() || step.content?.trim() == pending.text.trim())
+            }
+            !matching
+        }
+        if (filtered.size != list.size) {
+            map[conversationId] = filtered
+            pendingMessagesFlow.value = map
+        }
     }
 
     suspend fun sendMessage(

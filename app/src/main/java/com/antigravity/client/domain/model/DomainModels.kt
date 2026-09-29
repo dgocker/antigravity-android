@@ -83,3 +83,11 @@ enum class MessageDeliveryStatus {
     DELIVERED,
     FAILED
 }
+
+data class PendingUserMessage(
+    val id: String,
+    val text: String,
+    val status: MessageDeliveryStatus,
+    val baseStepIndex: Int,
+    val timestamp: Long = System.currentTimeMillis()
+)
