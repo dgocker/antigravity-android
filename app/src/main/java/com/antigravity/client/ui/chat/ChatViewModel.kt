@@ -65,10 +65,16 @@ class ChatViewModel(
 
     val availableModels = MutableStateFlow<List<ModelOption>>(DEFAULT_MODELS)
     val selectedModel = MutableStateFlow<String>(tokenStore.selectedModel ?: "gemini-3.8-flash-high")
+    val selectedEffort = MutableStateFlow<String>(tokenStore.selectedEffort)
 
     fun selectModel(modelId: String) {
         selectedModel.value = modelId
         tokenStore.selectedModel = modelId
+    }
+
+    fun selectEffort(effort: String) {
+        selectedEffort.value = effort
+        tokenStore.selectedEffort = effort
     }
 
     init {
@@ -147,7 +153,7 @@ class ChatViewModel(
                     workspace = workspace,
                     text = fullMessage,
                     model = selectedModel.value,
-                    effort = tokenStore.selectedEffort,
+                    effort = selectedEffort.value,
                     mode = tokenStore.selectedMode
                 )
                 // Mark as SENT (reached server queue)

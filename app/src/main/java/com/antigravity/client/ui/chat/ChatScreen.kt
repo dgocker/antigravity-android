@@ -176,6 +176,7 @@ fun ChatScreen(
     val isLoadingHistory by viewModel.isLoadingHistory.collectAsStateWithLifecycle()
     val availableModels by viewModel.availableModels.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
+    val selectedEffort by viewModel.selectedEffort.collectAsStateWithLifecycle()
 
     val lastStep = steps.lastOrNull()
     val isLastStepDone = lastStep?.type == "PLANNER_RESPONSE" && lastStep.status == "DONE"
@@ -257,8 +258,10 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             ModelHeaderChip(
                                 selectedModelId = selectedModel,
+                                selectedEffort = selectedEffort,
                                 availableModels = availableModels,
-                                onSelectModel = { viewModel.selectModel(it) }
+                                onSelectModel = { viewModel.selectModel(it) },
+                                onSelectEffort = { viewModel.selectEffort(it) }
                             )
                         }
                     }
@@ -828,13 +831,24 @@ private fun Composer(
 @Composable
 fun ModelHeaderChip(
     selectedModelId: String,
+    selectedEffort: String,
     availableModels: List<ModelOption>,
-    onSelectModel: (String) -> Unit
+    onSelectModel: (String) -> Unit,
+    onSelectEffort: (String) -> Unit
 ) {
     var showSheet by remember { mutableStateOf(false) }
     val currentModel = availableModels.find { it.id == selectedModelId }
     val displayName = currentModel?.name?.substringBefore(" (")
         ?: selectedModelId.removePrefix("gemini-").removePrefix("claude-")
+
+    val effortLabel = when (selectedEffort.lowercase()) {
+        "high" -> "High"
+        "medium" -> "Med"
+        "low" -> "Low"
+        else -> ""
+    }
+
+    val chipText = if (effortLabel.isNotEmpty()) "$displayName • $effortLabel" else displayName
 
     Surface(
         color = DarkSurfaceVariant.copy(alpha = 0.8f),
@@ -846,7 +860,7 @@ fun ModelHeaderChip(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = displayName,
+                text = chipText,
                 color = TextSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -855,7 +869,7 @@ fun ModelHeaderChip(
             Spacer(modifier = Modifier.width(3.dp))
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = "Select Model",
+                contentDescription = "Select Model & Reasoning",
                 tint = TextMuted,
                 modifier = Modifier.size(14.dp)
             )
@@ -865,12 +879,11 @@ fun ModelHeaderChip(
     if (showSheet) {
         ModelSelectionBottomSheet(
             selectedModelId = selectedModelId,
+            selectedEffort = selectedEffort,
             availableModels = availableModels,
             onDismiss = { showSheet = false },
-            onSelect = {
-                onSelectModel(it)
-                showSheet = false
-            }
+            onSelectModel = onSelectModel,
+            onSelectEffort = onSelectEffort
         )
     }
 }
@@ -879,9 +892,11 @@ fun ModelHeaderChip(
 @Composable
 fun ModelSelectionBottomSheet(
     selectedModelId: String,
+    selectedEffort: String,
     availableModels: List<ModelOption>,
     onDismiss: () -> Unit,
-    onSelect: (String) -> Unit
+    onSelectModel: (String) -> Unit,
+    onSelectEffort: (String) -> Unit
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -901,14 +916,14 @@ fun ModelSelectionBottomSheet(
                 color = TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 12.dp)
             )
 
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 420.dp)
+                    .heightIn(max = 280.dp)
             ) {
                 items(availableModels, key = { it.id }) { model ->
                     val isSelected = model.id == selectedModelId
@@ -917,12 +932,12 @@ fun ModelSelectionBottomSheet(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(model.id) }
+                            .clickable { onSelectModel(model.id) }
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (isSelected) {
@@ -940,7 +955,7 @@ fun ModelSelectionBottomSheet(
                                 Text(
                                     text = model.name,
                                     color = if (isSelected) PrimaryBlue else TextPrimary,
-                                    fontSize = 15.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                 )
                                 if (!model.reasoningLevel.isNullOrBlank()) {
@@ -948,9 +963,74 @@ fun ModelSelectionBottomSheet(
                                     Text(
                                         text = model.reasoningLevel,
                                         color = TextSecondary,
-                                        fontSize = 12.sp
+                                        fontSize = 11.sp
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(
+                color = DarkSurfaceVariant,
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
+
+            Text(
+                text = "Способности к размышлениям",
+                color = TextPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            val effortOptions = listOf(
+                Triple("high", "Высокие (High)", "Решение сложных проблем, глубокий анализ кода"),
+                Triple("medium", "Средние (Medium)", "Сбалансированное рассуждение"),
+                Triple("low", "Низкие (Low)", "Быстрые ответы"),
+                Triple("off", "Выключено (Off)", "Без предварительных размышлений")
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                effortOptions.forEach { (effortKey, effortTitle, effortDesc) ->
+                    val isEffortSelected = effortKey.equals(selectedEffort, ignoreCase = true)
+                    Surface(
+                        color = if (isEffortSelected) DarkSurfaceVariant else Color.Transparent,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectEffort(effortKey) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isEffortSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = PrimaryBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = effortTitle,
+                                    color = if (isEffortSelected) PrimaryBlue else TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isEffortSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                                Text(
+                                    text = effortDesc,
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
                             }
                         }
                     }
