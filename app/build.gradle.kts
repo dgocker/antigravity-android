@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+    id("kotlin-kapt")
 }
 
 android {
@@ -83,7 +84,7 @@ dependencies {
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    annotationProcessor(libs.androidx.room.compiler)
+    kapt(libs.androidx.room.compiler)
 
     // Tooling
     debugImplementation(libs.androidx.compose.ui.tooling)

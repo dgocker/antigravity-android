@@ -33,10 +33,11 @@ class AntigravityApp : Application() {
         super.onCreate()
         instance = this
 
+        tokenStore = TokenStore(this)
+        networkClient = NetworkClient(tokenStore)
+
         try {
-            tokenStore = TokenStore(this)
             database = AppDatabase.getInstance(this)
-            networkClient = NetworkClient(tokenStore)
             chatRepository = ChatRepository(networkClient.getApi(), database)
             fileRepository = FileRepository(networkClient.getApi(), database)
             syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
@@ -55,10 +56,12 @@ class AntigravityApp : Application() {
                 syncEngine.stop()
             }
             networkClient = NetworkClient(tokenStore)
-            chatRepository = ChatRepository(networkClient.getApi(), database)
-            fileRepository = FileRepository(networkClient.getApi(), database)
-            syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
-            syncEngine.start()
+            if (::database.isInitialized) {
+                chatRepository = ChatRepository(networkClient.getApi(), database)
+                fileRepository = FileRepository(networkClient.getApi(), database)
+                syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
+                syncEngine.start()
+            }
         } catch (e: Throwable) {
             Log.e("AntigravityApp", "Error restarting sync engine: ${e.message}", e)
         }
