@@ -16,6 +16,21 @@ data class PendingUserMessage(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+val DEFAULT_MODELS = listOf(
+    ModelOption("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)", "Самые быстрые и точные ответы, высокая логика"),
+    ModelOption("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)", "Баланс скорости и рассуждений"),
+    ModelOption("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)", "Максимально быстрые ответы"),
+    ModelOption("gemini-3.7-flash-high", "Gemini 3.7 Flash (High)", "Высокая точность и скорость"),
+    ModelOption("gemini-3.7-flash-medium", "Gemini 3.7 Flash (Medium)", "Средний уровень размышлений"),
+    ModelOption("gemini-3.7-flash-low", "Gemini 3.7 Flash (Low)", "Быстрые ответы"),
+    ModelOption("gemini-3.1-pro-high", "Gemini 3.1 Pro (High)", "Расширенные возможности рассуждения"),
+    ModelOption("gemini-3.1-pro-low", "Gemini 3.1 Pro (Low)", "Быстрый Pro режим"),
+    ModelOption("claude-sonnet-4-6", "Claude Sonnet 4.6 (Thinking)", "Агентное мышление и глубокий кодинг"),
+    ModelOption("claude-opus-4-6-thinking", "Claude Opus 4.6 (Thinking)", "Максимальная глубина рассуждений"),
+    ModelOption("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)", "Open-source 120B модель"),
+    ModelOption("gemini-3.6-flash-high", "Gemini 3.6 Flash (High)", "Стабильная Flash модель")
+)
+
 class ChatViewModel(
     val conversationId: String,
     private val app: AntigravityApp = AntigravityApp.instance
@@ -48,7 +63,27 @@ class ChatViewModel(
     val errorState = MutableStateFlow<String?>(null)
     val isLoadingHistory = MutableStateFlow(true)
 
+    val availableModels = MutableStateFlow<List<ModelOption>>(DEFAULT_MODELS)
+    val selectedModel = MutableStateFlow<String>(tokenStore.selectedModel ?: "gemini-3.8-flash-high")
+
+    fun selectModel(modelId: String) {
+        selectedModel.value = modelId
+        tokenStore.selectedModel = modelId
+    }
+
     init {
+        // Load available models
+        viewModelScope.launch {
+            try {
+                val serverModels = repository.getAvailableModels()
+                if (serverModels.isNotEmpty()) {
+                    availableModels.value = serverModels
+                }
+            } catch (e: Exception) {
+                // Keep default models
+            }
+        }
+
         // Load full step history from server
         viewModelScope.launch {
             try {
@@ -111,7 +146,7 @@ class ChatViewModel(
                     conversationId = conversationId,
                     workspace = workspace,
                     text = fullMessage,
-                    model = tokenStore.selectedModel,
+                    model = selectedModel.value,
                     effort = tokenStore.selectedEffort,
                     mode = tokenStore.selectedMode
                 )

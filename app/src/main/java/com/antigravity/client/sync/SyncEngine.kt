@@ -108,13 +108,12 @@ class SyncEngine(
                     )
                     stepDao.insertOrUpdate(step)
 
-                    // Clear live delta for finished planner step
+                    // Clear live delta and mark IDLE for finished planner step
                     if (step.type == "PLANNER_RESPONSE" && step.status == "DONE") {
                         _liveDeltas.value = _liveDeltas.value - conversationId
-                    }
-
-                    if (conversationId.isNotBlank()) {
-                        conversationDao.updateStatus(conversationId, "CASCADE_RUN_STATUS_RUNNING")
+                        if (conversationId.isNotBlank()) {
+                            conversationDao.updateStatus(conversationId, "CASCADE_RUN_STATUS_IDLE")
+                        }
                     }
                 }
             }

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.antigravity.client.domain.model.CodeDiff
 import com.antigravity.client.domain.model.MessageDeliveryStatus
+import com.antigravity.client.domain.model.ModelOption
 import com.antigravity.client.domain.model.Step
 import com.antigravity.client.domain.model.ToolCall
 import com.antigravity.client.ui.components.CodeDiffViewer
@@ -173,8 +174,12 @@ fun ChatScreen(
     val isCancelling by viewModel.isCancelling.collectAsStateWithLifecycle()
     val errorState by viewModel.errorState.collectAsStateWithLifecycle()
     val isLoadingHistory by viewModel.isLoadingHistory.collectAsStateWithLifecycle()
+    val availableModels by viewModel.availableModels.collectAsStateWithLifecycle()
+    val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
 
-    val isRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty()
+    val lastStep = steps.lastOrNull()
+    val isLastStepDone = lastStep?.type == "PLANNER_RESPONSE" && lastStep.status == "DONE"
+    val isRunning = !isLastStepDone && (conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty())
     val listState = rememberLazyListState()
 
     // Combine confirmed steps with optimistic pending messages (instant appearance!)
@@ -249,6 +254,12 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             ConnectionBadge(status = connectionStatus)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            ModelHeaderChip(
+                                selectedModelId = selectedModel,
+                                availableModels = availableModels,
+                                onSelectModel = { viewModel.selectModel(it) }
+                            )
                         }
                     }
                 },
@@ -258,21 +269,7 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    if (isRunning || isCancelling) {
-                        Button(
-                            onClick = { viewModel.cancelRun() },
-                            colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            modifier = Modifier.height(32.dp),
-                            enabled = !isCancelling
-                        ) {
-                            Icon(AppIcons.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (isCancelling) "Stopping..." else "Stop", fontSize = 12.sp)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
+                    // Top right STOP button removed per user request
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface),
                 windowInsets = TopAppBarDefaults.windowInsets
@@ -785,7 +782,20 @@ private fun Composer(
                     )
                 )
 
-                if (isRunning) {
+                if (message.isNotBlank()) {
+                    IconButton(
+                        onClick = onSend,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(PrimaryBlue, shape = RoundedCornerShape(22.dp))
+                    ) {
+                        Icon(
+                            AppIcons.ArrowUpward,
+                            contentDescription = "Send",
+                            tint = TextPrimary
+                        )
+                    }
+                } else if (isRunning) {
                     IconButton(
                         onClick = onCancel,
                         modifier = Modifier
@@ -796,20 +806,153 @@ private fun Composer(
                     }
                 } else {
                     IconButton(
-                        onClick = onSend,
-                        enabled = message.isNotBlank(),
+                        onClick = {},
+                        enabled = false,
                         modifier = Modifier
                             .size(44.dp)
-                            .background(
-                                if (message.isNotBlank()) PrimaryBlue else DarkSurfaceVariant,
-                                shape = RoundedCornerShape(22.dp)
-                            )
+                            .background(DarkSurfaceVariant, shape = RoundedCornerShape(22.dp))
                     ) {
                         Icon(
                             AppIcons.ArrowUpward,
                             contentDescription = "Send",
-                            tint = if (message.isNotBlank()) TextPrimary else TextMuted
+                            tint = TextMuted
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ModelHeaderChip(
+    selectedModelId: String,
+    availableModels: List<ModelOption>,
+    onSelectModel: (String) -> Unit
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    val currentModel = availableModels.find { it.id == selectedModelId }
+    val displayName = currentModel?.name?.substringBefore(" (")
+        ?: selectedModelId.removePrefix("gemini-").removePrefix("claude-")
+
+    Surface(
+        color = DarkSurfaceVariant.copy(alpha = 0.8f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.clickable { showSheet = true }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = displayName,
+                color = TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Select Model",
+                tint = TextMuted,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+
+    if (showSheet) {
+        ModelSelectionBottomSheet(
+            selectedModelId = selectedModelId,
+            availableModels = availableModels,
+            onDismiss = { showSheet = false },
+            onSelect = {
+                onSelectModel(it)
+                showSheet = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ModelSelectionBottomSheet(
+    selectedModelId: String,
+    availableModels: List<ModelOption>,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = DarkSurface,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = TextMuted)
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Модель Antigravity",
+                color = TextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+            ) {
+                items(availableModels, key = { it.id }) { model ->
+                    val isSelected = model.id == selectedModelId
+                    Surface(
+                        color = if (isSelected) DarkSurfaceVariant else Color.Transparent,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(model.id) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = PrimaryBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = model.name,
+                                    color = if (isSelected) PrimaryBlue else TextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                                if (!model.reasoningLevel.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = model.reasoningLevel,
+                                        color = TextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
