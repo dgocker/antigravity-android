@@ -4,7 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.util.Base64
+import java.util.Base64
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -58,13 +58,13 @@ class KeystoreManager(private val context: Context? = null) {
         val combined = ByteArray(iv.size + cipherBytes.size)
         System.arraycopy(iv, 0, combined, 0, iv.size)
         System.arraycopy(cipherBytes, 0, combined, iv.size, cipherBytes.size)
-        return Base64.encodeToString(combined, Base64.NO_WRAP)
+        return Base64.getEncoder().encodeToString(combined)
     }
 
     fun decrypt(encryptedText: String): String {
         if (encryptedText.isEmpty()) return ""
         return try {
-            val combined = Base64.decode(encryptedText, Base64.NO_WRAP)
+            val combined = Base64.getDecoder().decode(encryptedText)
             if (combined.size < gcmIvLength) return ""
             val iv = combined.copyOfRange(0, gcmIvLength)
             val cipherBytes = combined.copyOfRange(gcmIvLength, combined.size)

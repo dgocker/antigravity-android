@@ -2,7 +2,7 @@ package com.antigravity.client
 
 import com.antigravity.client.data.remote.dto.NormalizedStepDto
 import com.google.gson.Gson
-import org.json.JSONObject
+import com.google.gson.JsonObject
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -63,8 +63,8 @@ class EventParsingTest {
             }
         """.trimIndent()
 
-        val json = JSONObject(unknownJson)
-        assertEquals("future_unknown_event_type", json.optString("type"))
-        assertEquals(999L, json.optLong("seq"))
+        val json = gson.fromJson(unknownJson, JsonObject::class.java)
+        assertEquals("future_unknown_event_type", json.get("type").asString)
+        assertEquals(999L, json.get("seq").asLong)
     }
 }
