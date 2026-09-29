@@ -141,7 +141,7 @@ class ChatRepository(
         return api.cancelRun(conversationId)
     }
 
-    suspend fun fetchStepsHistory(conversationId: String, afterStep: Int? = null, limit: Int = 100) {
+    suspend fun fetchStepsHistory(conversationId: String, afterStep: Int? = null, limit: Int = 500) {
         val stepDtos = api.getChatSteps(conversationId, afterStep, limit)
         val entities = stepDtos.map { dto ->
             StepEntity(
