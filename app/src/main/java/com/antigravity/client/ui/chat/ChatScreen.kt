@@ -22,12 +22,119 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.antigravity.client.domain.model.CodeDiff
 import com.antigravity.client.domain.model.Step
+import com.antigravity.client.domain.model.ToolCall
 import com.antigravity.client.ui.components.CodeDiffViewer
 import com.antigravity.client.ui.components.ConnectionBadge
-import com.antigravity.client.ui.components.RunStatusBadge
 import com.antigravity.client.ui.components.ToolCallCard
 import com.antigravity.client.ui.theme.*
+
+sealed class ConversationBubble(val key: String) {
+    data class User(
+        val stepIndex: Int,
+        val text: String
+    ) : ConversationBubble("user_$stepIndex")
+
+    data class Agent(
+        val stepIndex: Int,
+        val thinking: String? = null,
+        val toolCallsWithResults: List<Pair<ToolCall, String?>> = emptyList(),
+        val diffs: List<CodeDiff> = emptyList(),
+        val messageText: String? = null,
+        val error: String? = null
+    ) : ConversationBubble("agent_$stepIndex")
+}
+
+fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
+    val bubbles = mutableListOf<ConversationBubble>()
+    var currentAgent: ConversationBubble.Agent? = null
+
+    for (step in steps) {
+        val content = step.content?.trim() ?: ""
+
+        // Filter out purely internal machine notifications and raw transcript line traces
+        if (content.startsWith("<SYSTEM_MESSAGE>") ||
+            content.startsWith("[Notice] All your subagents") ||
+            (content.startsWith("{\"step_index\":") && content.endsWith("}"))
+        ) {
+            continue
+        }
+
+        // 1. User Message
+        if (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
+            currentAgent?.let { bubbles.add(it) }
+            currentAgent = null
+
+            val userText = step.userPrompt ?: step.content ?: ""
+            if (userText.isNotBlank()) {
+                bubbles.add(ConversationBubble.User(step.stepIndex, userText))
+            }
+            continue
+        }
+
+        // 2. Tool output / execution result
+        val isToolOutput = step.type == "GENERIC" && (
+            content.startsWith("Created At:") ||
+            content.contains("The command exited with code") ||
+            content.startsWith("File Path:") ||
+            step.source == "SYSTEM"
+        )
+
+        if (isToolOutput) {
+            // Attach output directly to the latest tool call in current agent turn
+            if (currentAgent != null && currentAgent.toolCallsWithResults.isNotEmpty()) {
+                val list = currentAgent.toolCallsWithResults.toMutableList()
+                val lastIdx = list.indexOfLast { it.second == null }
+                if (lastIdx != -1) {
+                    list[lastIdx] = list[lastIdx].first to content
+                } else {
+                    list[list.lastIndex] = list.last().first to content
+                }
+                currentAgent = currentAgent.copy(toolCallsWithResults = list)
+            }
+            continue
+        }
+
+        // 3. Agent Turn (PLANNER_RESPONSE or actual assistant text)
+        val newTools = step.toolCalls.map { it to (null as String?) }
+        val newDiffs = step.diffs
+        val newThinking = step.thinking.takeIf { !it.isNullOrBlank() }
+        val newError = step.error.takeIf { !it.isNullOrBlank() }
+        val newText = content.takeIf { it.isNotBlank() && !isToolOutput }
+
+        if (currentAgent == null) {
+            currentAgent = ConversationBubble.Agent(
+                stepIndex = step.stepIndex,
+                thinking = newThinking,
+                toolCallsWithResults = newTools,
+                diffs = newDiffs,
+                messageText = newText,
+                error = newError
+            )
+        } else {
+            val combinedTools = currentAgent.toolCallsWithResults + newTools
+            val combinedDiffs = currentAgent.diffs + newDiffs
+            val combinedThinking = if (currentAgent.thinking.isNullOrBlank()) newThinking else currentAgent.thinking
+            val combinedError = if (currentAgent.error.isNullOrBlank()) newError else currentAgent.error
+            val combinedText = when {
+                currentAgent.messageText.isNullOrBlank() -> newText
+                newText.isNullOrBlank() -> currentAgent.messageText
+                else -> "${currentAgent.messageText}\n\n$newText"
+            }
+            currentAgent = currentAgent.copy(
+                thinking = combinedThinking,
+                toolCallsWithResults = combinedTools,
+                diffs = combinedDiffs,
+                messageText = combinedText,
+                error = combinedError
+            )
+        }
+    }
+
+    currentAgent?.let { bubbles.add(it) }
+    return bubbles
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,13 +154,13 @@ fun ChatScreen(
     val isRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty()
     val listState = rememberLazyListState()
 
-    // Auto-scroll to bottom when new steps or live delta arrived
-    LaunchedEffect(steps.size, activeDeltaText.length) {
-        if (steps.isNotEmpty() || activeDeltaText.isNotEmpty()) {
-            val totalItems = steps.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
-            if (totalItems > 0) {
-                listState.animateScrollToItem(totalItems - 1)
-            }
+    val bubbles = remember(steps) { processStepsToBubbles(steps) }
+
+    // Auto-scroll to bottom when new items or live delta arrived
+    LaunchedEffect(bubbles.size, activeDeltaText.length) {
+        val total = bubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
+        if (total > 0) {
+            listState.animateScrollToItem(total - 1)
         }
     }
 
@@ -140,8 +247,11 @@ fun ChatScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(steps, key = { "${it.conversationId}_${it.stepIndex}" }) { step ->
-                    StepItem(step = step)
+                items(bubbles, key = { it.key }) { bubble ->
+                    when (bubble) {
+                        is ConversationBubble.User -> UserBubble(bubble)
+                        is ConversationBubble.Agent -> AgentBubble(bubble)
+                    }
                 }
 
                 // Live Streaming Delta Item
@@ -167,141 +277,197 @@ fun ChatScreen(
 }
 
 @Composable
-private fun StepItem(step: Step) {
-    if (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
-        // User message bubble (Right aligned)
+private fun UserBubble(bubble: ConversationBubble.User) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End
+    ) {
+        Surface(
+            color = PrimaryBlue,
+            shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+            modifier = Modifier.widthIn(max = 320.dp)
+        ) {
+            Text(
+                text = bubble.text,
+                color = TextPrimary,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AgentBubble(bubble: ConversationBubble.Agent) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(DarkSurface)
+            .padding(12.dp)
+    ) {
+        // Agent Header
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                color = PrimaryBlue,
-                shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
-                modifier = Modifier.widthIn(max = 320.dp)
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = AppIcons.SmartToy,
+                    contentDescription = "Agent",
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = step.userPrompt ?: step.content ?: "",
+                    text = "Agent",
                     color = TextPrimary,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(12.dp)
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
+            Text(
+                text = "Step #${bubble.stepIndex}",
+                color = TextMuted,
+                fontSize = 11.sp
+            )
         }
-    } else {
-        // Agent Step (Left aligned)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(DarkSurface)
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = AppIcons.SmartToy,
-                        contentDescription = "Agent",
-                        tint = PrimaryBlue,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Agent",
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Text(
-                    text = "Step #${step.stepIndex}",
-                    color = TextMuted,
-                    fontSize = 11.sp
-                )
-            }
 
-            // Thinking block if available
-            if (!step.thinking.isNullOrBlank()) {
-                var showThinking by remember { mutableStateOf(false) }
-                Spacer(modifier = Modifier.height(8.dp))
-                Surface(
-                    color = DarkSurfaceVariant,
-                    shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showThinking = !showThinking },
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(AppIcons.Psychology, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Thinking", color = WarningOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Icon(
-                                imageVector = if (showThinking) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
+        // Thinking block if available (collapsed by default)
+        if (!bubble.thinking.isNullOrBlank()) {
+            var showThinking by remember { mutableStateOf(false) }
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                color = DarkSurfaceVariant,
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showThinking = !showThinking },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(AppIcons.Psychology, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Thinking", color = WarningOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
-                        AnimatedVisibility(visible = showThinking) {
-                            Text(
-                                text = step.thinking,
-                                color = TextSecondary,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(top = 6.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = if (showThinking) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    AnimatedVisibility(visible = showThinking) {
+                        Text(
+                            text = bubble.thinking,
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
                     }
                 }
             }
+        }
 
-            // Tool Calls
-            step.toolCalls.forEach { tool ->
-                Spacer(modifier = Modifier.height(8.dp))
-                ToolCallCard(toolCall = tool)
-            }
-
-            // Code Diffs
-            step.diffs.forEach { diff ->
-                Spacer(modifier = Modifier.height(8.dp))
-                CodeDiffViewer(diff = diff)
-            }
-
-            // Step Content
-            if (!step.content.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = step.content,
-                    color = TextPrimary,
-                    fontSize = 14.sp
-                )
-            }
-
-            // Error if any
-            if (!step.error.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
+        // Tool Calls: If 3 or more, wrap in a compact collapsible header
+        if (bubble.toolCallsWithResults.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            if (bubble.toolCallsWithResults.size > 2) {
+                var showToolsList by remember { mutableStateOf(false) }
                 Surface(
-                    color = ErrorRed.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    color = DarkSurfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showToolsList = !showToolsList }
                 ) {
-                    Text(
-                        text = "Error: ${step.error}",
-                        color = ErrorRed,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(8.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Build,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Executed ${bubble.toolCallsWithResults.size} tools (${bubble.toolCallsWithResults.map { it.first.name }.distinct().joinToString(", ")})",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(
+                            imageVector = if (showToolsList) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
+
+                AnimatedVisibility(visible = showToolsList) {
+                    Column(modifier = Modifier.padding(top = 4.dp)) {
+                        bubble.toolCallsWithResults.forEach { (tool, result) ->
+                            ToolCallCard(toolCall = tool, result = result)
+                        }
+                    }
+                }
+            } else {
+                bubble.toolCallsWithResults.forEach { (tool, result) ->
+                    ToolCallCard(toolCall = tool, result = result)
+                }
+            }
+        }
+
+        // Code Diffs
+        bubble.diffs.forEach { diff ->
+            Spacer(modifier = Modifier.height(8.dp))
+            CodeDiffViewer(diff = diff)
+        }
+
+        // Clean Agent Response Text
+        if (!bubble.messageText.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = bubble.messageText,
+                color = TextPrimary,
+                fontSize = 14.sp,
+                lineHeight = 20.sp
+            )
+        }
+
+        // Error if any
+        if (!bubble.error.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                color = ErrorRed.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Error: ${bubble.error}",
+                    color = ErrorRed,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(8.dp)
+                )
             }
         }
     }
@@ -336,7 +502,8 @@ private fun LiveStreamBubble(text: String) {
         Text(
             text = text,
             color = TextPrimary,
-            fontSize = 14.sp
+            fontSize = 14.sp,
+            lineHeight = 20.sp
         )
     }
 }
