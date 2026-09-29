@@ -1,0 +1,138 @@
+package com.antigravity.client.data.remote.dto
+
+import com.google.gson.annotations.SerializedName
+
+data class HealthResponseDto(
+    @SerializedName("status") val status: String,
+    @SerializedName("service") val service: String,
+    @SerializedName("gateway") val gateway: String,
+    @SerializedName("agy_available") val agyAvailable: Boolean,
+    @SerializedName("max_concurrent_runs") val maxConcurrentRuns: Int
+)
+
+data class ModelInfoDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("reasoning_level") val reasoningLevel: String? = null
+)
+
+data class ChatSummaryDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("preview") val preview: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("step_count") val stepCount: Int,
+    @SerializedName("last_modified") val lastModified: String,
+    @SerializedName("workspace") val workspace: String,
+    @SerializedName("parent_conversation_id") val parentConversationId: String? = null
+)
+
+data class CreateChatRequestDto(
+    @SerializedName("workspace") val workspace: String,
+    @SerializedName("message") val message: String,
+    @SerializedName("model") val model: String? = null,
+    @SerializedName("effort") val effort: String? = null,
+    @SerializedName("mode") val mode: String? = null
+)
+
+data class CreateChatResponseDto(
+    @SerializedName("conversation_id") val conversationId: String,
+    @SerializedName("run_id") val runId: String
+)
+
+data class SendMessageRequestDto(
+    @SerializedName("text") val text: String,
+    @SerializedName("model") val model: String? = null,
+    @SerializedName("effort") val effort: String? = null,
+    @SerializedName("mode") val mode: String? = null
+)
+
+data class SendMessageResponseDto(
+    @SerializedName("run_id") val runId: String,
+    @SerializedName("status") val status: String = "queued"
+)
+
+data class CancelResponseDto(
+    @SerializedName("conversation_id") val conversationId: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("run_id") val runId: String? = null
+)
+
+data class ToolCallDto(
+    @SerializedName("name") val name: String,
+    @SerializedName("args") val args: Map<String, Any?>? = null
+)
+
+data class CodeDiffDto(
+    @SerializedName("file") val file: String,
+    @SerializedName("action") val action: String, // create | overwrite | append | replace | multi_replace
+    @SerializedName("start_line") val startLine: Int? = null,
+    @SerializedName("end_line") val endLine: Int? = null,
+    @SerializedName("target_content") val targetContent: String? = null,
+    @SerializedName("replacement_content") val replacementContent: String? = null,
+    @SerializedName("instruction") val instruction: String? = null
+)
+
+data class NormalizedStepDto(
+    @SerializedName("step_index") val stepIndex: Int,
+    @SerializedName("source") val source: String, // USER_EXPLICIT | MODEL | SYSTEM
+    @SerializedName("type") val type: String,     // USER_INPUT | PLANNER_RESPONSE | GENERIC | CODE_ACTION | ERROR_MESSAGE | SYSTEM_MESSAGE
+    @SerializedName("status") val status: String, // DONE | RUNNING
+    @SerializedName("created_at") val createdAt: String,
+    @SerializedName("thinking") val thinking: String? = null,
+    @SerializedName("content") val content: String? = null,
+    @SerializedName("user_prompt") val userPrompt: String? = null,
+    @SerializedName("tool_calls") val toolCalls: List<ToolCallDto>? = null,
+    @SerializedName("diffs") val diffs: List<CodeDiffDto>? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class EventItemDto(
+    @SerializedName("seq") val seq: Long,
+    @SerializedName("conversation_id") val conversationId: String,
+    @SerializedName("run_id") val runId: String,
+    @SerializedName("type") val type: String,
+    @SerializedName("payload") val payload: com.google.gson.JsonElement? = null,
+    @SerializedName("ts") val ts: String
+)
+
+data class FileEntryDto(
+    @SerializedName("name") val name: String,
+    @SerializedName("path") val path: String,
+    @SerializedName("is_dir") val isDir: Boolean,
+    @SerializedName("is_symlink") val isSymlink: Boolean,
+    @SerializedName("size") val size: Long,
+    @SerializedName("last_modified") val lastModified: String
+)
+
+data class DirectoryListResponseDto(
+    @SerializedName("path") val path: String,
+    @SerializedName("entries") val entries: List<FileEntryDto>
+)
+
+data class FileContentResponseDto(
+    @SerializedName("path") val path: String,
+    @SerializedName("is_binary") val isBinary: Boolean,
+    @SerializedName("size") val size: Long,
+    @SerializedName("content") val content: String? = null,
+    @SerializedName("message") val message: String? = null
+)
+
+data class DeviceTokenCreateRequestDto(
+    @SerializedName("device_name") val deviceName: String
+)
+
+data class DeviceTokenCreateResponseDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("device_name") val deviceName: String,
+    @SerializedName("token") val token: String,
+    @SerializedName("created_at") val createdAt: String
+)
+
+data class DeviceTokenInfoDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("device_name") val deviceName: String,
+    @SerializedName("created_at") val createdAt: String,
+    @SerializedName("last_used_at") val lastUsedAt: String? = null,
+    @SerializedName("revoked_at") val revokedAt: String? = null
+)
