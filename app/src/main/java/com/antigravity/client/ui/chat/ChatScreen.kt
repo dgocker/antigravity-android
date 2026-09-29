@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.antigravity.client.domain.model.CodeDiff
+import com.antigravity.client.domain.model.MessageDeliveryStatus
 import com.antigravity.client.domain.model.Step
 import com.antigravity.client.domain.model.ToolCall
 import com.antigravity.client.ui.components.CodeDiffViewer
@@ -33,9 +34,10 @@ import com.antigravity.client.ui.theme.*
 
 sealed class ConversationBubble(val key: String) {
     data class User(
-        val stepIndex: Int,
-        val text: String
-    ) : ConversationBubble("user_$stepIndex")
+        val id: String,
+        val text: String,
+        val status: MessageDeliveryStatus = MessageDeliveryStatus.DELIVERED
+    ) : ConversationBubble("user_$id")
 
     data class Agent(
         val stepIndex: Int,
@@ -47,20 +49,24 @@ sealed class ConversationBubble(val key: String) {
     ) : ConversationBubble("agent_$stepIndex")
 }
 
+fun cleanTextFromSystemNoise(rawText: String): String {
+    var text = rawText
+    // Remove "The following is a <SYSTEM_MESSAGE> ... </SYSTEM_MESSAGE>" block
+    text = text.replace(Regex("""The following is a <SYSTEM_MESSAGE>[\s\S]*?</SYSTEM_MESSAGE>""", RegexOption.IGNORE_CASE), "")
+    // Remove standalone <SYSTEM_MESSAGE> ... </SYSTEM_MESSAGE>
+    text = text.replace(Regex("""<SYSTEM_MESSAGE>[\s\S]*?</SYSTEM_MESSAGE>""", RegexOption.IGNORE_CASE), "")
+    // Remove header/notice lines
+    text = text.replace(Regex("""The following is a <SYSTEM_MESSAGE>[^\n]*""", RegexOption.IGNORE_CASE), "")
+    text = text.replace(Regex("""\[Notice\][^\n]*""", RegexOption.IGNORE_CASE), "")
+    return text.trim()
+}
+
 fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
     val bubbles = mutableListOf<ConversationBubble>()
     var currentAgent: ConversationBubble.Agent? = null
 
     for (step in steps) {
-        val content = step.content?.trim() ?: ""
-
-        // Filter out purely internal machine notifications and raw transcript line traces
-        if (content.startsWith("<SYSTEM_MESSAGE>") ||
-            content.startsWith("[Notice] All your subagents") ||
-            (content.startsWith("{\"step_index\":") && content.endsWith("}"))
-        ) {
-            continue
-        }
+        val rawContent = step.content?.trim() ?: ""
 
         // 1. User Message
         if (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
@@ -69,16 +75,26 @@ fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
 
             val userText = step.userPrompt ?: step.content ?: ""
             if (userText.isNotBlank()) {
-                bubbles.add(ConversationBubble.User(step.stepIndex, userText))
+                bubbles.add(
+                    ConversationBubble.User(
+                        id = "${step.conversationId}_${step.stepIndex}",
+                        text = userText,
+                        status = MessageDeliveryStatus.DELIVERED
+                    )
+                )
             }
             continue
         }
 
-        // 2. Tool output / execution result
+        // Clean out any embedded or standalone system message noise
+        val cleanedContent = cleanTextFromSystemNoise(rawContent)
+
+        // 2. Check if this is a raw tool output / execution result
         val isToolOutput = step.type == "GENERIC" && (
-            content.startsWith("Created At:") ||
-            content.contains("The command exited with code") ||
-            content.startsWith("File Path:") ||
+            rawContent.startsWith("Created At:") ||
+            rawContent.contains("The command exited with code") ||
+            rawContent.startsWith("File Path:") ||
+            rawContent.startsWith("{\"step_index\":") ||
             step.source == "SYSTEM"
         )
 
@@ -88,21 +104,25 @@ fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
                 val list = currentAgent.toolCallsWithResults.toMutableList()
                 val lastIdx = list.indexOfLast { it.second == null }
                 if (lastIdx != -1) {
-                    list[lastIdx] = list[lastIdx].first to content
+                    list[lastIdx] = list[lastIdx].first to rawContent
                 } else {
-                    list[list.lastIndex] = list.last().first to content
+                    list[list.lastIndex] = list.last().first to rawContent
                 }
                 currentAgent = currentAgent.copy(toolCallsWithResults = list)
             }
             continue
         }
 
-        // 3. Agent Turn (PLANNER_RESPONSE or actual assistant text)
+        // If after cleaning system noise there is no content and no tools/diffs/thinking, skip it
         val newTools = step.toolCalls.map { it to (null as String?) }
         val newDiffs = step.diffs
         val newThinking = step.thinking.takeIf { !it.isNullOrBlank() }
         val newError = step.error.takeIf { !it.isNullOrBlank() }
-        val newText = content.takeIf { it.isNotBlank() && !isToolOutput }
+        val newText = cleanedContent.takeIf { it.isNotBlank() }
+
+        if (newTools.isEmpty() && newDiffs.isEmpty() && newThinking == null && newText == null && newError == null) {
+            continue
+        }
 
         if (currentAgent == null) {
             currentAgent = ConversationBubble.Agent(
@@ -145,6 +165,7 @@ fun ChatScreen(
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val steps by viewModel.steps.collectAsStateWithLifecycle()
+    val pendingMessages by viewModel.pendingMessages.collectAsStateWithLifecycle()
     val activeDeltaText by viewModel.activeDeltaText.collectAsStateWithLifecycle()
     val connectionStatus by viewModel.connectionStatus.collectAsStateWithLifecycle()
     val inputMessage by viewModel.inputMessage.collectAsStateWithLifecycle()
@@ -155,7 +176,20 @@ fun ChatScreen(
     val isRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty()
     val listState = rememberLazyListState()
 
-    val allBubbles = remember(steps) { processStepsToBubbles(steps) }
+    // Combine confirmed steps with optimistic pending messages (instant appearance!)
+    val allBubbles = remember(steps, pendingMessages) {
+        val list = processStepsToBubbles(steps).toMutableList()
+        for (pending in pendingMessages) {
+            list.add(
+                ConversationBubble.User(
+                    id = pending.id,
+                    text = pending.text,
+                    status = pending.status
+                )
+            )
+        }
+        list
+    }
 
     // Pagination: start with 30 most recent messages to prevent lag and scrolling
     var visibleLimit by remember { mutableIntStateOf(30) }
@@ -169,15 +203,17 @@ fun ChatScreen(
 
     var isInitialScrollDone by remember { mutableStateOf(false) }
 
+    val hasEarlier = allBubbles.size > visibleLimit
+    val totalItems = (if (hasEarlier) 1 else 0) + displayedBubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
+
     // Instant jump to bottom on initial load, smooth scroll on new incoming messages
-    LaunchedEffect(displayedBubbles.size, activeDeltaText.length) {
-        val total = displayedBubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
-        if (total > 0) {
+    LaunchedEffect(totalItems) {
+        if (totalItems > 0) {
             if (!isInitialScrollDone) {
-                listState.scrollToItem(total - 1)
+                listState.scrollToItem(totalItems - 1)
                 isInitialScrollDone = true
             } else {
-                listState.animateScrollToItem(total - 1)
+                listState.animateScrollToItem(totalItems - 1)
             }
         }
     }
@@ -186,11 +222,8 @@ fun ChatScreen(
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
     LaunchedEffect(imeBottom) {
-        if (imeBottom > 0 && displayedBubbles.isNotEmpty()) {
-            val total = displayedBubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
-            if (total > 0) {
-                listState.scrollToItem(total - 1)
-            }
+        if (imeBottom > 0 && totalItems > 0) {
+            listState.scrollToItem(totalItems - 1)
         }
     }
 
@@ -241,10 +274,9 @@ fun ChatScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface),
-                windowInsets = WindowInsets.statusBars
+                windowInsets = TopAppBarDefaults.windowInsets
             )
         },
-        contentWindowInsets = WindowInsets.statusBars,
         containerColor = DarkBackground
     ) { padding ->
         Column(
@@ -253,7 +285,6 @@ fun ChatScreen(
                 .padding(padding)
                 .consumeWindowInsets(padding)
                 .imePadding()
-                .navigationBarsPadding()
         ) {
             // Error banner
             errorState?.let { err ->
@@ -352,13 +383,59 @@ private fun UserBubble(bubble: ConversationBubble.User) {
             shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Text(
-                text = bubble.text,
-                color = TextPrimary,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(12.dp)
-            )
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = bubble.text,
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    when (bubble.status) {
+                        MessageDeliveryStatus.SENDING -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(10.dp),
+                                color = TextPrimary.copy(alpha = 0.6f),
+                                strokeWidth = 1.5.dp
+                            )
+                        }
+                        MessageDeliveryStatus.SENT -> {
+                            Text(
+                                text = "✓",
+                                color = TextPrimary.copy(alpha = 0.7f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        MessageDeliveryStatus.DELIVERED -> {
+                            Text(
+                                text = "✓✓",
+                                color = TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        MessageDeliveryStatus.FAILED -> {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Failed",
+                                tint = ErrorRed,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Failed to send",
+                                color = ErrorRed,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -508,7 +585,7 @@ private fun AgentBubble(bubble: ConversationBubble.Agent) {
             CodeDiffViewer(diff = diff)
         }
 
-        // Clean Agent Response Text
+        // Clean Agent Response Text (stripped of system notices)
         if (!bubble.messageText.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(

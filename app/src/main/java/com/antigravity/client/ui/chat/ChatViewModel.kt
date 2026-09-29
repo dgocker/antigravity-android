@@ -6,6 +6,15 @@ import com.antigravity.client.AntigravityApp
 import com.antigravity.client.domain.model.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.UUID
+
+data class PendingUserMessage(
+    val id: String,
+    val text: String,
+    val status: MessageDeliveryStatus,
+    val baseStepIndex: Int,
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 class ChatViewModel(
     val conversationId: String,
@@ -24,6 +33,9 @@ class ChatViewModel(
     val steps: StateFlow<List<Step>> = repository.getSteps(conversationId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Optimistic pending messages that appear immediately when user hits Send
+    val pendingMessages = MutableStateFlow<List<PendingUserMessage>>(emptyList())
+
     // Live streaming text accumulator for this specific conversation
     val activeDeltaText: StateFlow<String> = syncEngine.liveDeltas
         .map { it[conversationId] ?: "" }
@@ -41,7 +53,23 @@ class ChatViewModel(
             try {
                 repository.fetchStepsHistory(conversationId)
             } catch (e: Exception) {
-                // Ignore, will use Room cache
+                // Ignore, will use cache
+            }
+        }
+
+        // Reconcile pending messages: remove from pending list once confirmed in steps DB
+        viewModelScope.launch {
+            steps.collect { currentSteps ->
+                if (pendingMessages.value.isNotEmpty()) {
+                    pendingMessages.value = pendingMessages.value.filter { pending ->
+                        val matchingNewStep = currentSteps.any { step ->
+                            step.stepIndex > pending.baseStepIndex &&
+                            (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") &&
+                            (step.userPrompt?.trim() == pending.text.trim() || step.content?.trim() == pending.text.trim())
+                        }
+                        !matchingNewStep
+                    }
+                }
             }
         }
     }
@@ -62,6 +90,17 @@ class ChatViewModel(
         inputMessage.value = ""
         quotedSnippet.value = null
 
+        val currentBaseStep = steps.value.maxOfOrNull { it.stepIndex } ?: -1
+        val pendingId = UUID.randomUUID().toString()
+        val pendingMsg = PendingUserMessage(
+            id = pendingId,
+            text = fullMessage,
+            status = MessageDeliveryStatus.SENDING,
+            baseStepIndex = currentBaseStep
+        )
+        // Add immediately to UI
+        pendingMessages.value = pendingMessages.value + pendingMsg
+
         viewModelScope.launch {
             try {
                 repository.sendMessage(
@@ -72,7 +111,14 @@ class ChatViewModel(
                     effort = tokenStore.selectedEffort,
                     mode = tokenStore.selectedMode
                 )
+                // Mark as SENT (reached server queue)
+                pendingMessages.value = pendingMessages.value.map {
+                    if (it.id == pendingId) it.copy(status = MessageDeliveryStatus.SENT) else it
+                }
             } catch (e: Exception) {
+                pendingMessages.value = pendingMessages.value.map {
+                    if (it.id == pendingId) it.copy(status = MessageDeliveryStatus.FAILED) else it
+                }
                 errorState.value = "Failed to send message: ${e.localizedMessage ?: e.message}"
             }
         }

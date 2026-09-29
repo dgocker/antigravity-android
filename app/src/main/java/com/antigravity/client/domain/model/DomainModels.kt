@@ -76,3 +76,10 @@ enum class ConnectionStatus {
     RECONNECTING,
     ERROR
 }
+
+enum class MessageDeliveryStatus {
+    SENDING,
+    SENT,
+    DELIVERED,
+    FAILED
+}
