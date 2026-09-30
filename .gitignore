@@ -14,4 +14,20 @@ captures/
 *.jks
 *.keystore
 .env*
+!.env.example
 google-services.json
+
+# Python / Server Gateway
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+server/venv/
+server/env/
+server/gateway.db*
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.pytest_cache/

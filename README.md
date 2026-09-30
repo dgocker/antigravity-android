@@ -86,14 +86,23 @@ A native, high-performance, offline-first Android control panel and IDE-like cli
 
 ---
 
-## 🔐 Provisioning Device Tokens on VPS
+## 🖥️ Server Gateway (`server/`)
 
-To connect an Android device to your `agy-gateway` server:
+This repository contains both the Android client (`app/`) and the companion server gateway (`server/`) that bridges the mobile app with the Antigravity CLI and interactive terminal sessions:
 
-1. SSH into the VPS running `agy-gateway`.
+- **Complete Installation & Deployment Guide:** 👉 **[server/README.md](server/README.md)**
+- **One-Command Automated Installer:** `server/install.sh`
+- **Systemd Unit Template:** `server/agy-gateway.service`
+- **API Reference Specification:** `server/API.md`
+
+### 🔐 Provisioning Device Tokens on Server
+
+To connect an Android device to your `server` gateway:
+
+1. SSH into the server running the gateway.
 2. Generate a dedicated device token using the CLI tool:
    ```bash
-   /root/agy-gateway/agy-token.py create "Pixel 8 Pro"
+   python3 server/agy-token.py create "Pixel 8 Pro"
    ```
    Output:
    ```text
@@ -102,9 +111,9 @@ To connect an Android device to your `agy-gateway` server:
    agy_android_9f8e7d6c5b4a3210abcdef0123456789
    ```
 3. Open the Antigravity Android app, enter your Server URL (`https://your-domain` or `http://127.0.0.1:8765`), and paste the generated token.
-4. If a device is lost or compromised, revoke its token anytime on the VPS:
+4. If a device is lost or compromised, revoke its token anytime on the server:
    ```bash
-   /root/agy-gateway/agy-token.py revoke 1
+   python3 server/agy-token.py revoke 1
    ```
    Or directly via the app's Settings screen.
 

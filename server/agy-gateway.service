@@ -1,0 +1,16 @@
+[Unit]
+Description=Antigravity CLI Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/agy-gateway
+EnvironmentFile=/root/agy-gateway/.env
+ExecStart=/root/agy-gateway/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765 --workers 1
+Restart=on-failure
+RestartSec=3s
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target
