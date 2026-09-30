@@ -20,6 +20,15 @@ interface GatewayApi {
         @Body request: CreateChatRequestDto
     ): CreateChatResponseDto
 
+    @Multipart
+    @POST("v1/attachments")
+    suspend fun uploadAttachment(
+        @Part file: okhttp3.MultipartBody.Part,
+        @Part("conversation_id") conversationId: okhttp3.RequestBody? = null,
+        @Part("transcription") transcription: okhttp3.RequestBody? = null,
+        @Part("duration") duration: okhttp3.RequestBody? = null
+    ): AttachmentUploadResponseDto
+
     @POST("v1/chats/{id}/messages")
     suspend fun sendMessage(
         @Path("id") chatId: String,

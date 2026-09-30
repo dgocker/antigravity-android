@@ -24,6 +24,7 @@ data class Step(
     val userPrompt: String? = null,
     val toolCalls: List<ToolCall> = emptyList(),
     val diffs: List<CodeDiff> = emptyList(),
+    val attachments: List<Attachment> = emptyList(),
     val error: String? = null
 )
 
@@ -78,17 +79,53 @@ enum class ConnectionStatus {
 }
 
 enum class MessageDeliveryStatus {
+    LOCAL,
+    UPLOADING,
     SENDING,
     SENT,
     DELIVERED,
     FAILED
 }
 
+enum class AttachmentType {
+    IMAGE,
+    VIDEO,
+    AUDIO,
+    DOCUMENT,
+    OTHER
+}
+
+enum class AttachmentUploadState {
+    LOCAL,
+    UPLOADING,
+    UPLOADED,
+    SENDING,
+    SENT,
+    FAILED,
+    CANCELLED
+}
+
+data class Attachment(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val type: AttachmentType,
+    val fileName: String,
+    val mimeType: String,
+    val size: Long,
+    val duration: Int? = null,
+    val localUri: String? = null,
+    val remoteUrl: String? = null,
+    val serverId: String? = null,
+    val uploadState: AttachmentUploadState = AttachmentUploadState.LOCAL,
+    val uploadProgress: Float = 0f,
+    val transcription: String? = null
+)
+
 data class PendingUserMessage(
     val id: String,
     val text: String,
     val status: MessageDeliveryStatus,
     val baseStepIndex: Int,
+    val attachments: List<Attachment> = emptyList(),
     val timestamp: Long = System.currentTimeMillis()
 )
 

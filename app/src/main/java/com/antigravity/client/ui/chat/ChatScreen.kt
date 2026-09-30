@@ -27,6 +27,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import java.io.File
+import com.antigravity.client.audio.AudioPlayer
 import com.antigravity.client.domain.model.*
 import com.antigravity.client.ui.components.*
 import com.antigravity.client.ui.theme.*
@@ -35,6 +43,7 @@ sealed class ConversationBubble(val key: String) {
     data class User(
         val id: String,
         val text: String,
+        val attachments: List<Attachment> = emptyList(),
         val status: MessageDeliveryStatus = MessageDeliveryStatus.DELIVERED
     ) : ConversationBubble("user_$id")
 
@@ -73,11 +82,12 @@ fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
             currentAgent = null
 
             val userText = step.userPrompt ?: step.content ?: ""
-            if (userText.isNotBlank()) {
+            if (userText.isNotBlank() || step.attachments.isNotEmpty()) {
                 bubbles.add(
                     ConversationBubble.User(
                         id = "${step.conversationId}_${step.stepIndex}",
                         text = userText,
+                        attachments = step.attachments,
                         status = MessageDeliveryStatus.DELIVERED
                     )
                 )
@@ -176,9 +186,78 @@ fun ChatScreen(
     val availableModels by viewModel.availableModels.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
     val selectedEffort by viewModel.selectedEffort.collectAsStateWithLifecycle()
+    val pendingAttachments by viewModel.pendingAttachments.collectAsStateWithLifecycle()
 
     var previewImageUrl by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+
+    // Attachment pickers
+    var cameraTempUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            cameraTempUri?.let { uri ->
+                viewModel.attachFromUri(uri)
+            }
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                val photoFile = File(context.cacheDir, "camera_photo_${System.currentTimeMillis()}.jpg")
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    photoFile
+                )
+                cameraTempUri = uri
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Не удалось открыть камеру: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Требуется разрешение на доступ к камере", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun launchCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                val photoFile = File(context.cacheDir, "camera_photo_${System.currentTimeMillis()}.jpg")
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    photoFile
+                )
+                cameraTempUri = uri
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Не удалось открыть камеру: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        uris.forEach { uri ->
+            viewModel.attachFromUri(uri)
+        }
+    }
+
+    val fileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        uris.forEach { uri ->
+            viewModel.attachFromUri(uri)
+        }
+    }
 
     val lastStep = steps.lastOrNull()
     val isLastStepDone = lastStep?.type == "PLANNER_RESPONSE" && lastStep.status == "DONE"
@@ -195,6 +274,7 @@ fun ChatScreen(
                 ConversationBubble.User(
                     id = pending.id,
                     text = pending.text,
+                    attachments = pending.attachments,
                     status = pending.status
                 )
             )
@@ -416,7 +496,12 @@ fun ChatScreen(
 
                     items(displayedBubbles, key = { it.key }) { bubble ->
                         when (bubble) {
-                            is ConversationBubble.User -> UserBubble(bubble)
+                            is ConversationBubble.User -> UserBubble(
+                                bubble = bubble,
+                                audioPlayer = viewModel.audioPlayer,
+                                onPreviewImage = { previewImageUrl = it },
+                                onRetry = { viewModel.retryPendingMessage(bubble.id) }
+                            )
                             is ConversationBubble.Agent -> AgentBubble(
                                 bubble = bubble,
                                 viewModel = viewModel,
@@ -440,15 +525,19 @@ fun ChatScreen(
                 }
             }
 
-            // Composer area
-            Composer(
-                message = inputMessage,
-                onMessageChange = { viewModel.inputMessage.value = it },
-                quotedSnippet = quotedSnippet,
-                onClearQuote = { viewModel.clearQuote() },
+            // Telegram Composer area
+            TelegramComposer(
+                text = inputMessage,
+                onTextChange = { viewModel.inputMessage.value = it },
+                attachments = pendingAttachments,
+                onRemoveAttachment = { viewModel.removePendingAttachment(it) },
                 onSend = { viewModel.sendMessage() },
+                onVoiceRecorded = { viewModel.attachVoiceNote(it) },
+                onPickCamera = { launchCamera() },
+                onPickGallery = { galleryLauncher.launch("image/*") },
+                onPickFile = { fileLauncher.launch(arrayOf("*/*")) },
                 isRunning = isRunning,
-                onCancel = { viewModel.cancelRun() }
+                onCancelRun = { viewModel.cancelRun() }
             )
         }
     }
@@ -464,7 +553,12 @@ fun ChatScreen(
 }
 
 @Composable
-private fun UserBubble(bubble: ConversationBubble.User) {
+private fun UserBubble(
+    bubble: ConversationBubble.User,
+    audioPlayer: AudioPlayer,
+    onPreviewImage: (String) -> Unit,
+    onRetry: () -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End
@@ -474,13 +568,92 @@ private fun UserBubble(bubble: ConversationBubble.User) {
             shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = bubble.text,
-                    color = TextPrimary,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
+            Column(modifier = Modifier.padding(10.dp)) {
+                // Attachments
+                if (bubble.attachments.isNotEmpty()) {
+                    bubble.attachments.forEach { att ->
+                        when (att.type) {
+                            AttachmentType.AUDIO -> {
+                                VoiceMessageCard(
+                                    attachment = att,
+                                    audioPlayer = audioPlayer,
+                                    isUser = true,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+                            }
+                            AttachmentType.IMAGE -> {
+                                val imgModel = att.localUri ?: att.remoteUrl
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .padding(bottom = 6.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(DarkSurfaceVariant)
+                                        .clickable {
+                                            imgModel?.let { onPreviewImage(it) }
+                                        }
+                                ) {
+                                    coil.compose.AsyncImage(
+                                        model = imgModel,
+                                        contentDescription = att.fileName,
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                            else -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 6.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(DarkSurfaceVariant.copy(alpha = 0.6f))
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = when (att.type) {
+                                            AttachmentType.VIDEO -> AppIcons.PlayArrow
+                                            else -> AppIcons.Description
+                                        },
+                                        contentDescription = null,
+                                        tint = TextPrimary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = att.fileName,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        val szKb = if (att.size > 0) "${att.size / 1024} KB" else ""
+                                        if (szKb.isNotEmpty()) {
+                                            Text(
+                                                text = szKb,
+                                                color = TextPrimary.copy(alpha = 0.7f),
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (bubble.text.isNotBlank()) {
+                    Text(
+                        text = bubble.text,
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.align(Alignment.End),
@@ -511,18 +684,24 @@ private fun UserBubble(bubble: ConversationBubble.User) {
                             )
                         }
                         MessageDeliveryStatus.FAILED -> {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = "Failed",
-                                tint = ErrorRed,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = "Failed to send",
-                                color = ErrorRed,
-                                fontSize = 10.sp
-                            )
+                            Row(
+                                modifier = Modifier.clickable { onRetry() },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Failed",
+                                    tint = ErrorRed,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Повторить ↻",
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }

@@ -8,7 +8,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
     context.applicationContext,
     "antigravity.db",
     null,
-    1
+    2
 ) {
     private val _conversationDao = ConversationDaoImpl(this)
     private val _eventDao = EventDaoImpl(this)
@@ -16,6 +16,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
     private val _runDao = RunDaoImpl(this)
     private val _syncStateDao = SyncStateDaoImpl(this)
     private val _fileCacheDao = FileCacheDaoImpl(this)
+    private val _attachmentDao = AttachmentDaoImpl(this)
+    private val _outboxDao = OutboxDaoImpl(this)
 
     fun conversationDao(): ConversationDao = _conversationDao
     fun eventDao(): EventDao = _eventDao
@@ -23,6 +25,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
     fun runDao(): RunDao = _runDao
     fun syncStateDao(): SyncStateDao = _syncStateDao
     fun fileCacheDao(): FileCacheDao = _fileCacheDao
+    fun attachmentDao(): AttachmentDao = _attachmentDao
+    fun outboxDao(): OutboxDao = _outboxDao
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -79,6 +83,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
                 userPrompt TEXT,
                 toolCallsJson TEXT,
                 diffsJson TEXT,
+                attachmentsJson TEXT,
                 error TEXT,
                 PRIMARY KEY (conversationId, stepIndex)
             )
@@ -106,16 +111,83 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
                 updatedAt INTEGER NOT NULL
             )
         """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS attachments (
+                id TEXT PRIMARY KEY NOT NULL,
+                conversationId TEXT NOT NULL,
+                messageId TEXT NOT NULL,
+                type TEXT NOT NULL,
+                fileName TEXT NOT NULL,
+                mimeType TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                duration INTEGER,
+                localUri TEXT,
+                remoteUrl TEXT,
+                serverId TEXT,
+                uploadState TEXT NOT NULL,
+                transcription TEXT,
+                createdAt INTEGER NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments (conversationId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_attachments_msg ON attachments (messageId)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS outbox (
+                id TEXT PRIMARY KEY NOT NULL,
+                conversationId TEXT NOT NULL,
+                text TEXT NOT NULL,
+                attachmentIdsJson TEXT NOT NULL,
+                state TEXT NOT NULL,
+                retryCount INTEGER NOT NULL,
+                lastError TEXT,
+                createdAt INTEGER NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_outbox_conv ON outbox (conversationId)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS conversations")
-        db.execSQL("DROP TABLE IF EXISTS events")
-        db.execSQL("DROP TABLE IF EXISTS runs")
-        db.execSQL("DROP TABLE IF EXISTS steps")
-        db.execSQL("DROP TABLE IF EXISTS file_cache")
-        db.execSQL("DROP TABLE IF EXISTS sync_state")
-        onCreate(db)
+        if (oldVersion < 2) {
+            try {
+                db.execSQL("ALTER TABLE steps ADD COLUMN attachmentsJson TEXT")
+            } catch (e: Exception) {}
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS attachments (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    conversationId TEXT NOT NULL,
+                    messageId TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    fileName TEXT NOT NULL,
+                    mimeType TEXT NOT NULL,
+                    size INTEGER NOT NULL,
+                    duration INTEGER,
+                    localUri TEXT,
+                    remoteUrl TEXT,
+                    serverId TEXT,
+                    uploadState TEXT NOT NULL,
+                    transcription TEXT,
+                    createdAt INTEGER NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments (conversationId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_attachments_msg ON attachments (messageId)")
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS outbox (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    conversationId TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    attachmentIdsJson TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    retryCount INTEGER NOT NULL,
+                    lastError TEXT,
+                    createdAt INTEGER NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_outbox_conv ON outbox (conversationId)")
+        }
     }
 
     companion object {

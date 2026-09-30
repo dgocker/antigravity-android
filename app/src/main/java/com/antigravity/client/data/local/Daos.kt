@@ -59,6 +59,26 @@ interface FileCacheDao {
     suspend fun delete(path: String)
 }
 
+interface AttachmentDao {
+    suspend fun insertOrUpdate(attachment: AttachmentEntity)
+    suspend fun insertAll(attachments: List<AttachmentEntity>)
+    fun getAttachmentsForConversation(conversationId: String): Flow<List<AttachmentEntity>>
+    fun getAttachmentsForMessage(messageId: String): Flow<List<AttachmentEntity>>
+    suspend fun getAttachment(id: String): AttachmentEntity?
+    suspend fun updateUploadState(id: String, state: String, remoteUrl: String? = null, serverId: String? = null)
+    suspend fun updateTranscription(id: String, transcription: String)
+    suspend fun delete(id: String)
+}
+
+interface OutboxDao {
+    suspend fun insert(item: OutboxEntity)
+    fun getPendingItems(): Flow<List<OutboxEntity>>
+    fun getItemsForConversation(conversationId: String): Flow<List<OutboxEntity>>
+    suspend fun updateState(id: String, state: String, error: String? = null)
+    suspend fun incrementRetry(id: String, error: String? = null)
+    suspend fun delete(id: String)
+}
+
 // --- Implementations ---
 
 class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
@@ -371,11 +391,13 @@ class StepDaoImpl(private val dbHelper: AppDatabase) : StepDao {
             put("userPrompt", userPrompt)
             put("toolCallsJson", toolCallsJson)
             put("diffsJson", diffsJson)
+            put("attachmentsJson", attachmentsJson)
             put("error", error)
         }
     }
 
     private fun Cursor.toStepEntity(): StepEntity {
+        val attachmentsIdx = getColumnIndex("attachmentsJson")
         return StepEntity(
             conversationId = getString(getColumnIndexOrThrow("conversationId")),
             runId = getString(getColumnIndexOrThrow("runId")),
@@ -389,6 +411,7 @@ class StepDaoImpl(private val dbHelper: AppDatabase) : StepDao {
             userPrompt = if (isNull(getColumnIndexOrThrow("userPrompt"))) null else getString(getColumnIndexOrThrow("userPrompt")),
             toolCallsJson = if (isNull(getColumnIndexOrThrow("toolCallsJson"))) null else getString(getColumnIndexOrThrow("toolCallsJson")),
             diffsJson = if (isNull(getColumnIndexOrThrow("diffsJson"))) null else getString(getColumnIndexOrThrow("diffsJson")),
+            attachmentsJson = if (attachmentsIdx >= 0 && !isNull(attachmentsIdx)) getString(attachmentsIdx) else null,
             error = if (isNull(getColumnIndexOrThrow("error"))) null else getString(getColumnIndexOrThrow("error"))
         )
     }
@@ -553,5 +576,219 @@ class FileCacheDaoImpl(private val dbHelper: AppDatabase) : FileCacheDao {
         val db = dbHelper.writableDatabase
         db.delete("file_cache", "path = ?", arrayOf(path))
         Unit
+    }
+}
+
+class AttachmentDaoImpl(private val dbHelper: AppDatabase) : AttachmentDao {
+    private val notifier = MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST).apply {
+        tryEmit(Unit)
+    }
+
+    private fun notifyChange() {
+        notifier.tryEmit(Unit)
+    }
+
+    override suspend fun insertOrUpdate(attachment: AttachmentEntity) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        db.insertWithOnConflict("attachments", null, attachment.toContentValues(), SQLiteDatabase.CONFLICT_REPLACE)
+        notifyChange()
+    }
+
+    override suspend fun insertAll(attachments: List<AttachmentEntity>) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+        try {
+            for (att in attachments) {
+                db.insertWithOnConflict("attachments", null, att.toContentValues(), SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        notifyChange()
+    }
+
+    override fun getAttachmentsForConversation(conversationId: String): Flow<List<AttachmentEntity>> = notifier.map {
+        withContext(Dispatchers.IO) {
+            val list = mutableListOf<AttachmentEntity>()
+            val db = dbHelper.readableDatabase
+            db.rawQuery("SELECT * FROM attachments WHERE conversationId = ? ORDER BY createdAt ASC", arrayOf(conversationId)).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(cursor.toAttachmentEntity())
+                }
+            }
+            list
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun getAttachmentsForMessage(messageId: String): Flow<List<AttachmentEntity>> = notifier.map {
+        withContext(Dispatchers.IO) {
+            val list = mutableListOf<AttachmentEntity>()
+            val db = dbHelper.readableDatabase
+            db.rawQuery("SELECT * FROM attachments WHERE messageId = ? ORDER BY createdAt ASC", arrayOf(messageId)).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(cursor.toAttachmentEntity())
+                }
+            }
+            list
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override suspend fun getAttachment(id: String): AttachmentEntity? = withContext(Dispatchers.IO) {
+        val db = dbHelper.readableDatabase
+        db.rawQuery("SELECT * FROM attachments WHERE id = ? LIMIT 1", arrayOf(id)).use { cursor ->
+            if (cursor.moveToNext()) cursor.toAttachmentEntity() else null
+        }
+    }
+
+    override suspend fun updateUploadState(id: String, state: String, remoteUrl: String?, serverId: String?) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val cv = ContentValues().apply {
+            put("uploadState", state)
+            if (remoteUrl != null) put("remoteUrl", remoteUrl)
+            if (serverId != null) put("serverId", serverId)
+        }
+        db.update("attachments", cv, "id = ?", arrayOf(id))
+        notifyChange()
+    }
+
+    override suspend fun updateTranscription(id: String, transcription: String) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val cv = ContentValues().apply {
+            put("transcription", transcription)
+        }
+        db.update("attachments", cv, "id = ?", arrayOf(id))
+        notifyChange()
+    }
+
+    override suspend fun delete(id: String) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        db.delete("attachments", "id = ?", arrayOf(id))
+        notifyChange()
+    }
+
+    private fun AttachmentEntity.toContentValues(): ContentValues {
+        return ContentValues().apply {
+            put("id", id)
+            put("conversationId", conversationId)
+            put("messageId", messageId)
+            put("type", type)
+            put("fileName", fileName)
+            put("mimeType", mimeType)
+            put("size", size)
+            put("duration", duration)
+            put("localUri", localUri)
+            put("remoteUrl", remoteUrl)
+            put("serverId", serverId)
+            put("uploadState", uploadState)
+            put("transcription", transcription)
+            put("createdAt", createdAt)
+        }
+    }
+
+    private fun Cursor.toAttachmentEntity(): AttachmentEntity {
+        return AttachmentEntity(
+            id = getString(getColumnIndexOrThrow("id")),
+            conversationId = getString(getColumnIndexOrThrow("conversationId")),
+            messageId = getString(getColumnIndexOrThrow("messageId")),
+            type = getString(getColumnIndexOrThrow("type")),
+            fileName = getString(getColumnIndexOrThrow("fileName")),
+            mimeType = getString(getColumnIndexOrThrow("mimeType")),
+            size = getLong(getColumnIndexOrThrow("size")),
+            duration = if (isNull(getColumnIndexOrThrow("duration"))) null else getInt(getColumnIndexOrThrow("duration")),
+            localUri = if (isNull(getColumnIndexOrThrow("localUri"))) null else getString(getColumnIndexOrThrow("localUri")),
+            remoteUrl = if (isNull(getColumnIndexOrThrow("remoteUrl"))) null else getString(getColumnIndexOrThrow("remoteUrl")),
+            serverId = if (isNull(getColumnIndexOrThrow("serverId"))) null else getString(getColumnIndexOrThrow("serverId")),
+            uploadState = getString(getColumnIndexOrThrow("uploadState")),
+            transcription = if (isNull(getColumnIndexOrThrow("transcription"))) null else getString(getColumnIndexOrThrow("transcription")),
+            createdAt = getLong(getColumnIndexOrThrow("createdAt"))
+        )
+    }
+}
+
+class OutboxDaoImpl(private val dbHelper: AppDatabase) : OutboxDao {
+    private val notifier = MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST).apply {
+        tryEmit(Unit)
+    }
+
+    private fun notifyChange() {
+        notifier.tryEmit(Unit)
+    }
+
+    override suspend fun insert(item: OutboxEntity) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val cv = ContentValues().apply {
+            put("id", item.id)
+            put("conversationId", item.conversationId)
+            put("text", item.text)
+            put("attachmentIdsJson", item.attachmentIdsJson)
+            put("state", item.state)
+            put("retryCount", item.retryCount)
+            put("lastError", item.lastError)
+            put("createdAt", item.createdAt)
+        }
+        db.insertWithOnConflict("outbox", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        notifyChange()
+    }
+
+    override fun getPendingItems(): Flow<List<OutboxEntity>> = notifier.map {
+        withContext(Dispatchers.IO) {
+            val list = mutableListOf<OutboxEntity>()
+            val db = dbHelper.readableDatabase
+            db.rawQuery("SELECT * FROM outbox WHERE state != 'SENT' ORDER BY createdAt ASC", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(cursor.toOutboxEntity())
+                }
+            }
+            list
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun getItemsForConversation(conversationId: String): Flow<List<OutboxEntity>> = notifier.map {
+        withContext(Dispatchers.IO) {
+            val list = mutableListOf<OutboxEntity>()
+            val db = dbHelper.readableDatabase
+            db.rawQuery("SELECT * FROM outbox WHERE conversationId = ? ORDER BY createdAt ASC", arrayOf(conversationId)).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(cursor.toOutboxEntity())
+                }
+            }
+            list
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override suspend fun updateState(id: String, state: String, error: String?) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val cv = ContentValues().apply {
+            put("state", state)
+            if (error != null) put("lastError", error)
+        }
+        db.update("outbox", cv, "id = ?", arrayOf(id))
+        notifyChange()
+    }
+
+    override suspend fun incrementRetry(id: String, error: String?) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        db.execSQL("UPDATE outbox SET retryCount = retryCount + 1, lastError = ?, state = 'FAILED' WHERE id = ?", arrayOf(error ?: "Send failed", id))
+        notifyChange()
+    }
+
+    override suspend fun delete(id: String) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        db.delete("outbox", "id = ?", arrayOf(id))
+        notifyChange()
+    }
+
+    private fun Cursor.toOutboxEntity(): OutboxEntity {
+        return OutboxEntity(
+            id = getString(getColumnIndexOrThrow("id")),
+            conversationId = getString(getColumnIndexOrThrow("conversationId")),
+            text = getString(getColumnIndexOrThrow("text")),
+            attachmentIdsJson = getString(getColumnIndexOrThrow("attachmentIdsJson")),
+            state = getString(getColumnIndexOrThrow("state")),
+            retryCount = getInt(getColumnIndexOrThrow("retryCount")),
+            lastError = if (isNull(getColumnIndexOrThrow("lastError"))) null else getString(getColumnIndexOrThrow("lastError")),
+            createdAt = getLong(getColumnIndexOrThrow("createdAt"))
+        )
     }
 }

@@ -17,6 +17,8 @@ class ChatRepository(
     private val stepDao = database.stepDao()
     private val runDao = database.runDao()
     private val eventDao = database.eventDao()
+    val attachmentDao = database.attachmentDao()
+    val outboxDao = database.outboxDao()
 
     fun getConversations(): Flow<List<Conversation>> {
         return conversationDao.getAllConversations().map { list ->
@@ -64,13 +66,27 @@ class ChatRepository(
     suspend fun createChat(
         workspace: String,
         message: String,
+        attachments: List<Attachment> = emptyList(),
         model: String? = null,
         effort: String? = null,
         mode: String? = null
     ): CreateChatResponseDto {
+        val attDtos = attachments.map { att ->
+            AttachmentRefDto(
+                id = att.serverId ?: att.id,
+                type = att.type.name.lowercase(),
+                fileName = att.fileName,
+                mimeType = att.mimeType,
+                size = att.size,
+                duration = att.duration,
+                serverPath = att.remoteUrl,
+                transcription = att.transcription
+            )
+        }
         val req = CreateChatRequestDto(
             workspace = workspace,
             message = message,
+            attachments = attDtos,
             model = model,
             effort = effort,
             mode = mode
@@ -82,17 +98,22 @@ class ChatRepository(
             .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
             .format(java.util.Date())
 
+        val displayTitle = if (message.isNotBlank()) message.take(40) else (attachments.firstOrNull()?.fileName ?: "New Chat")
+        val displayPreview = if (message.isNotBlank()) message.take(80) else (attachments.firstOrNull()?.fileName ?: "")
+
         conversationDao.insertOrUpdate(
             ConversationEntity(
                 conversationId = resp.conversationId,
-                title = message.take(40),
-                preview = message.take(80),
+                title = displayTitle,
+                preview = displayPreview,
                 status = "CASCADE_RUN_STATUS_RUNNING",
                 stepCount = 1,
                 lastModified = now,
                 workspace = workspace
             )
         )
+
+        val attachmentsJsonStr = if (attachments.isNotEmpty()) gson.toJson(attachments) else null
 
         // Pre-insert user prompt as step 0 so chat UI displays it immediately on opening
         stepDao.insertOrUpdate(
@@ -105,7 +126,8 @@ class ChatRepository(
                 status = "completed",
                 createdAt = now,
                 content = message,
-                userPrompt = message
+                userPrompt = message,
+                attachmentsJson = attachmentsJsonStr
             )
         )
 
@@ -166,12 +188,26 @@ class ChatRepository(
         conversationId: String,
         workspace: String,
         text: String,
+        attachments: List<Attachment> = emptyList(),
         model: String? = null,
         effort: String? = null,
         mode: String? = null
     ): SendMessageResponseDto {
+        val attDtos = attachments.map { att ->
+            AttachmentRefDto(
+                id = att.serverId ?: att.id,
+                type = att.type.name.lowercase(),
+                fileName = att.fileName,
+                mimeType = att.mimeType,
+                size = att.size,
+                duration = att.duration,
+                serverPath = att.remoteUrl,
+                transcription = att.transcription
+            )
+        }
         val req = SendMessageRequestDto(
             text = text,
+            attachments = attDtos,
             model = model,
             effort = effort,
             mode = mode
@@ -190,6 +226,43 @@ class ChatRepository(
 
         return resp
     }
+
+    suspend fun uploadAttachment(
+        file: java.io.File,
+        mimeType: String,
+        conversationId: String? = null,
+        transcription: String? = null,
+        duration: Int? = null,
+        onProgress: (Float) -> Unit = {}
+    ): AttachmentUploadResponseDto {
+        val mediaType = okhttp3.MediaType.parse(mimeType)
+        val fileReqBody = okhttp3.RequestBody.create(mediaType, file)
+        val countingBody = com.antigravity.client.data.remote.CountingRequestBody(fileReqBody, onProgress)
+        val filePart = okhttp3.MultipartBody.Part.createFormData("file", file.name, countingBody)
+
+        val convPart = conversationId?.let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("text/plain"), it) }
+        val transPart = transcription?.let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("text/plain"), it) }
+        val durPart = duration?.let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("text/plain"), it.toString()) }
+
+        return api.uploadAttachment(
+            file = filePart,
+            conversationId = convPart,
+            transcription = transPart,
+            duration = durPart
+        )
+    }
+
+    fun getOutboxItems(conversationId: String): Flow<List<OutboxEntity>> = outboxDao.getItemsForConversation(conversationId)
+    suspend fun saveOutboxItem(item: OutboxEntity) = outboxDao.insert(item)
+    suspend fun updateOutboxState(id: String, state: String, error: String? = null) = outboxDao.updateState(id, state, error)
+    suspend fun deleteOutboxItem(id: String) = outboxDao.delete(id)
+    fun getPendingOutboxItems(): Flow<List<OutboxEntity>> = outboxDao.getPendingItems()
+
+    fun getAttachmentsForConversation(conversationId: String): Flow<List<AttachmentEntity>> = attachmentDao.getAttachmentsForConversation(conversationId)
+    fun getAttachmentsForMessage(messageId: String): Flow<List<AttachmentEntity>> = attachmentDao.getAttachmentsForMessage(messageId)
+    suspend fun saveAttachment(entity: AttachmentEntity) = attachmentDao.insertOrUpdate(entity)
+    suspend fun updateAttachmentState(id: String, state: String, remoteUrl: String? = null, serverId: String? = null) = attachmentDao.updateUploadState(id, state, remoteUrl, serverId)
+    suspend fun updateAttachmentTranscription(id: String, text: String) = attachmentDao.updateTranscription(id, text)
 
     suspend fun cancelRun(conversationId: String): CancelResponseDto {
         return api.cancelRun(conversationId)
@@ -211,6 +284,30 @@ class ChatRepository(
                 userPrompt = dto.userPrompt,
                 toolCallsJson = dto.toolCalls?.let { gson.toJson(it) },
                 diffsJson = dto.diffs?.let { gson.toJson(it) },
+                attachmentsJson = dto.attachments?.let { dtos ->
+                    val domainAttachments = dtos.map { a ->
+                        Attachment(
+                            id = a.id,
+                            conversationId = conversationId,
+                            type = when (a.type.lowercase()) {
+                                "image" -> AttachmentType.IMAGE
+                                "video" -> AttachmentType.VIDEO
+                                "audio" -> AttachmentType.AUDIO
+                                "document" -> AttachmentType.DOCUMENT
+                                else -> AttachmentType.OTHER
+                            },
+                            fileName = a.fileName,
+                            mimeType = a.mimeType,
+                            size = a.size,
+                            duration = a.duration,
+                            remoteUrl = a.serverPath,
+                            serverId = a.id,
+                            transcription = a.transcription,
+                            uploadState = AttachmentUploadState.COMPLETED
+                        )
+                    }
+                    gson.toJson(domainAttachments)
+                },
                 error = dto.error
             )
         }
@@ -265,6 +362,15 @@ class ChatRepository(
             }
         } ?: emptyList()
 
+        val parsedAttachments: List<Attachment> = attachmentsJson?.let {
+            try {
+                val listType = object : com.google.gson.reflect.TypeToken<List<Attachment>>() {}.type
+                gson.fromJson(it, listType) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } ?: emptyList()
+
         return Step(
             conversationId = conversationId,
             runId = runId,
@@ -278,6 +384,7 @@ class ChatRepository(
             userPrompt = userPrompt,
             toolCalls = tools,
             diffs = parsedDiffs,
+            attachments = parsedAttachments,
             error = error
         )
     }

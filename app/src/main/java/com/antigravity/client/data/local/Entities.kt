@@ -45,7 +45,36 @@ data class StepEntity(
     val userPrompt: String? = null,
     val toolCallsJson: String? = null,
     val diffsJson: String? = null,
+    val attachmentsJson: String? = null,
     val error: String? = null
+)
+
+data class AttachmentEntity(
+    val id: String,
+    val conversationId: String,
+    val messageId: String,
+    val type: String,
+    val fileName: String,
+    val mimeType: String,
+    val size: Long,
+    val duration: Int? = null,
+    val localUri: String? = null,
+    val remoteUrl: String? = null,
+    val serverId: String? = null,
+    val uploadState: String,
+    val transcription: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class OutboxEntity(
+    val id: String,
+    val conversationId: String,
+    val text: String,
+    val attachmentIdsJson: String,
+    val state: String,
+    val retryCount: Int = 0,
+    val lastError: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 data class FileCacheEntity(

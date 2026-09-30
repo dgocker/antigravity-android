@@ -27,9 +27,31 @@ data class ChatSummaryDto(
     @SerializedName("parent_conversation_id") val parentConversationId: String? = null
 )
 
+data class AttachmentRefDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("type") val type: String = "document",
+    @SerializedName("file_name") val fileName: String,
+    @SerializedName("mime_type") val mimeType: String,
+    @SerializedName("size") val size: Long,
+    @SerializedName("duration") val duration: Int? = null,
+    @SerializedName("server_path") val serverPath: String? = null,
+    @SerializedName("transcription") val transcription: String? = null
+)
+
+data class AttachmentUploadResponseDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("file_name") val fileName: String,
+    @SerializedName("mime_type") val mimeType: String,
+    @SerializedName("size") val size: Long,
+    @SerializedName("storage_path") val storagePath: String,
+    @SerializedName("download_url") val downloadUrl: String,
+    @SerializedName("transcription") val transcription: String? = null
+)
+
 data class CreateChatRequestDto(
     @SerializedName("workspace") val workspace: String,
     @SerializedName("message") val message: String,
+    @SerializedName("attachments") val attachments: List<AttachmentRefDto> = emptyList(),
     @SerializedName("model") val model: String? = null,
     @SerializedName("effort") val effort: String? = null,
     @SerializedName("mode") val mode: String? = null
@@ -42,6 +64,7 @@ data class CreateChatResponseDto(
 
 data class SendMessageRequestDto(
     @SerializedName("text") val text: String,
+    @SerializedName("attachments") val attachments: List<AttachmentRefDto> = emptyList(),
     @SerializedName("model") val model: String? = null,
     @SerializedName("effort") val effort: String? = null,
     @SerializedName("mode") val mode: String? = null
@@ -84,6 +107,7 @@ data class NormalizedStepDto(
     @SerializedName("user_prompt") val userPrompt: String? = null,
     @SerializedName("tool_calls") val toolCalls: List<ToolCallDto>? = null,
     @SerializedName("diffs") val diffs: List<CodeDiffDto>? = null,
+    @SerializedName("attachments") val attachments: List<AttachmentRefDto>? = null,
     @SerializedName("error") val error: String? = null
 )
 
