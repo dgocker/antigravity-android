@@ -365,9 +365,37 @@ fun ChatScreen(
     val isLoadingArtifacts by viewModel.isLoadingArtifacts.collectAsStateWithLifecycle()
     val isLoadingTasks by viewModel.isLoadingTasks.collectAsStateWithLifecycle()
 
-    var showModelSheet by remember { mutableStateOf(false) }
-    var showTasksSheet by remember { mutableStateOf(false) }
-    var showArtifactsSheet by remember { mutableStateOf(false) }
+    val showModelSheet by viewModel.showModelSheet.collectAsStateWithLifecycle()
+    val showTasksSheet by viewModel.showTasksSheet.collectAsStateWithLifecycle()
+    val showArtifactsSheet by viewModel.showArtifactsSheet.collectAsStateWithLifecycle()
+
+    val showEffortSheet by viewModel.showEffortSheet.collectAsStateWithLifecycle()
+    val showDiffSheet by viewModel.showDiffSheet.collectAsStateWithLifecycle()
+    val diffData by viewModel.diffData.collectAsStateWithLifecycle()
+    val isDiffLoading by viewModel.isDiffLoading.collectAsStateWithLifecycle()
+
+    val showRenameDialog by viewModel.showRenameDialog.collectAsStateWithLifecycle()
+    val showContextSheet by viewModel.showContextSheet.collectAsStateWithLifecycle()
+    val contextData by viewModel.contextData.collectAsStateWithLifecycle()
+    val isContextLoading by viewModel.isContextLoading.collectAsStateWithLifecycle()
+
+    val showAgentsSheet by viewModel.showAgentsSheet.collectAsStateWithLifecycle()
+    val agentsList by viewModel.agentsList.collectAsStateWithLifecycle()
+    val isAgentsLoading by viewModel.isAgentsLoading.collectAsStateWithLifecycle()
+
+    val showSkillsSheet by viewModel.showSkillsSheet.collectAsStateWithLifecycle()
+    val skillsList by viewModel.skillsList.collectAsStateWithLifecycle()
+    val isSkillsLoading by viewModel.isSkillsLoading.collectAsStateWithLifecycle()
+
+    val showCommandsCatalogSheet by viewModel.showCommandsCatalogSheet.collectAsStateWithLifecycle()
+    val activeWorkflowDialog by viewModel.activeWorkflowDialog.collectAsStateWithLifecycle()
+    val showClearConfirmDialog by viewModel.showClearConfirmDialog.collectAsStateWithLifecycle()
+    val showForkConfirmDialog by viewModel.showForkConfirmDialog.collectAsStateWithLifecycle()
+    val showBtwDialog by viewModel.showBtwDialog.collectAsStateWithLifecycle()
+    val btwInitialQuery by viewModel.btwInitialQuery.collectAsStateWithLifecycle()
+
+    val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
+
     var previewArtifact by remember { mutableStateOf<ArtifactDto?>(null) }
     var previewArtifactContent by remember { mutableStateOf("") }
     var isLoadingArtifactContent by remember { mutableStateOf(false) }
@@ -381,6 +409,13 @@ fun ChatScreen(
     var previewImageUrl by remember { mutableStateOf<String?>(null) }
     var previewImageName by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            viewModel.toastMessage.value = null
+        }
+    }
 
     // Attachment pickers
     var cameraTempUri by remember { mutableStateOf<Uri?>(null) }
@@ -594,7 +629,9 @@ fun ChatScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(
+                        modifier = Modifier.clickable { viewModel.showRenameDialog.value = true }
+                    ) {
                         Text(
                             text = conversation?.title ?: "Chat",
                             color = TextPrimary,
@@ -628,7 +665,13 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    // Top right STOP button removed per user request
+                    IconButton(onClick = { viewModel.showCommandsCatalogSheet.value = true }) {
+                        Icon(
+                            imageVector = AppIcons.Terminal,
+                            contentDescription = "Слэш-команды (/help)",
+                            tint = PrimaryBlue
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface),
                 windowInsets = TopAppBarDefaults.windowInsets
@@ -899,22 +942,8 @@ fun ChatScreen(
                 onRemoveAttachment = { viewModel.removePendingAttachment(it) },
                 onSend = {
                     val trimmed = inputMessage.trim()
-                    when {
-                        trimmed.equals("/tasks", ignoreCase = true) -> {
-                            viewModel.inputMessage.value = ""
-                            viewModel.loadTasks()
-                            showTasksSheet = true
-                        }
-                        trimmed.equals("/model", ignoreCase = true) -> {
-                            viewModel.inputMessage.value = ""
-                            showModelSheet = true
-                        }
-                        trimmed.equals("/artifact", ignoreCase = true) || trimmed.equals("/artifacts", ignoreCase = true) -> {
-                            viewModel.inputMessage.value = ""
-                            viewModel.loadArtifacts()
-                            showArtifactsSheet = true
-                        }
-                        else -> viewModel.sendMessage()
+                    if (!viewModel.handleSlashCommand(trimmed)) {
+                        viewModel.sendMessage()
                     }
                 },
                 onVoiceRecorded = { viewModel.attachVoiceNote(it) },
@@ -925,25 +954,7 @@ fun ChatScreen(
                 onCancelRun = { viewModel.cancelRun() },
                 slashCommands = slashCommands,
                 onSlashCommandSelect = { cmd ->
-                    when (cmd.action) {
-                        "select_model" -> {
-                            viewModel.inputMessage.value = ""
-                            showModelSheet = true
-                        }
-                        "view_tasks" -> {
-                            viewModel.inputMessage.value = ""
-                            viewModel.loadTasks()
-                            showTasksSheet = true
-                        }
-                        "view_artifacts" -> {
-                            viewModel.inputMessage.value = ""
-                            viewModel.loadArtifacts()
-                            showArtifactsSheet = true
-                        }
-                        else -> {
-                            viewModel.inputMessage.value = "/${cmd.name} "
-                        }
-                    }
+                    viewModel.handleSlashCommand("/${cmd.name}")
                 }
             )
         }
@@ -966,14 +977,14 @@ fun ChatScreen(
             selectedModelId = selectedModel,
             selectedEffort = selectedEffort,
             availableModels = availableModels,
-            onDismiss = { showModelSheet = false },
+            onDismiss = { viewModel.showModelSheet.value = false },
             onSelectModel = {
                 viewModel.selectModel(it)
-                showModelSheet = false
+                viewModel.showModelSheet.value = false
             },
             onSelectEffort = {
                 viewModel.selectEffort(it)
-                showModelSheet = false
+                viewModel.showModelSheet.value = false
             }
         )
     }
@@ -984,7 +995,7 @@ fun ChatScreen(
             isLoading = isLoadingTasks,
             onRefresh = { viewModel.loadTasks() },
             onKillTask = { viewModel.killTask(it) },
-            onDismiss = { showTasksSheet = false }
+            onDismiss = { viewModel.showTasksSheet.value = false }
         )
     }
 
@@ -1004,7 +1015,125 @@ fun ChatScreen(
             onDownloadArtifact = { art ->
                 viewModel.downloadFile(context, art.path, art.fileName)
             },
-            onDismiss = { showArtifactsSheet = false }
+            onDismiss = { viewModel.showArtifactsSheet.value = false }
+        )
+    }
+
+    if (showEffortSheet) {
+        EffortBottomSheet(
+            selectedEffort = selectedEffort,
+            onSelectEffort = { effort ->
+                viewModel.selectEffort(effort)
+                viewModel.showEffortSheet.value = false
+            },
+            onDismiss = { viewModel.showEffortSheet.value = false }
+        )
+    }
+
+    if (showDiffSheet) {
+        DiffBottomSheet(
+            diffData = diffData,
+            isLoading = isDiffLoading,
+            onRefresh = { viewModel.loadDiff() },
+            onDismiss = { viewModel.showDiffSheet.value = false }
+        )
+    }
+
+    if (showRenameDialog) {
+        RenameChatDialog(
+            currentTitle = conversation?.title ?: "",
+            onConfirm = { newTitle ->
+                viewModel.renameChat(newTitle)
+                viewModel.showRenameDialog.value = false
+            },
+            onDismiss = { viewModel.showRenameDialog.value = false }
+        )
+    }
+
+    if (showContextSheet) {
+        ContextUsageBottomSheet(
+            contextData = contextData,
+            isLoading = isContextLoading,
+            onRefresh = { viewModel.loadContext() },
+            onDismiss = { viewModel.showContextSheet.value = false }
+        )
+    }
+
+    if (showAgentsSheet) {
+        GenericListBottomSheet(
+            title = "Доступные агенты (/agents)",
+            items = agentsList,
+            isLoading = isAgentsLoading,
+            onDismiss = { viewModel.showAgentsSheet.value = false }
+        )
+    }
+
+    if (showSkillsSheet) {
+        GenericListBottomSheet(
+            title = "Установленные скиллы (/skills)",
+            items = skillsList,
+            isLoading = isSkillsLoading,
+            onDismiss = { viewModel.showSkillsSheet.value = false }
+        )
+    }
+
+    if (showCommandsCatalogSheet) {
+        CommandsCatalogBottomSheet(
+            commands = slashCommands,
+            onSelectCommand = { cmd ->
+                viewModel.showCommandsCatalogSheet.value = false
+                viewModel.handleSlashCommand("/${cmd.name}")
+            },
+            onDismiss = { viewModel.showCommandsCatalogSheet.value = false }
+        )
+    }
+
+    activeWorkflowDialog?.let { dialogData ->
+        WorkflowPromptDialog(
+            data = dialogData,
+            onConfirm = { prompt ->
+                viewModel.activeWorkflowDialog.value = null
+                viewModel.launchWorkflow(dialogData.commandName, prompt)
+            },
+            onDismiss = { viewModel.activeWorkflowDialog.value = null }
+        )
+    }
+
+    if (showClearConfirmDialog) {
+        ConfirmationDialog(
+            title = "Очистить чат (/clear)",
+            message = "Вы уверены, что хотите сбросить историю диалога и контекст сессии?",
+            confirmText = "Очистить",
+            isDestructive = true,
+            onConfirm = { viewModel.confirmClearChat() },
+            onDismiss = { viewModel.showClearConfirmDialog.value = false }
+        )
+    }
+
+    if (showForkConfirmDialog) {
+        ConfirmationDialog(
+            title = "Разветвить сессию (/fork)",
+            message = "Создать независимое ответвление текущей сессии с сохранением контекста?",
+            confirmText = "Создать Fork",
+            isDestructive = false,
+            onConfirm = { viewModel.confirmForkChat() },
+            onDismiss = { viewModel.showForkConfirmDialog.value = false }
+        )
+    }
+
+    if (showBtwDialog) {
+        WorkflowPromptDialog(
+            data = ChatViewModel.WorkflowDialogData(
+                commandName = "btw",
+                title = "Побочный вопрос (/btw)",
+                description = "Задайте быстрый вопрос агенту без сохранения в общую историю диалога.",
+                hint = if (btwInitialQuery.isNotBlank()) btwInitialQuery else "Введите ваш вопрос..."
+            ),
+            onConfirm = { question ->
+                viewModel.showBtwDialog.value = false
+                viewModel.submitBtwQuestion(question)
+            },
+            onDismiss = { viewModel.showBtwDialog.value = false }
         )
     }
 

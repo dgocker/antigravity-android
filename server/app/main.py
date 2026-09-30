@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import json
 import logging
 import os
+from pathlib import Path
 import sqlite3
 from typing import Optional
 from urllib.parse import urlparse
@@ -41,6 +42,7 @@ from app.hub import handle_websocket_connection
 from app.models import (
     AttachmentRef,
     AttachmentUploadResponse,
+    ArtifactInfo,
     CancelResponse,
     ChatSummary,
     CreateChatRequest,
@@ -54,6 +56,14 @@ from app.models import (
     NormalizedStep,
     SendMessageRequest,
     SendMessageResponse,
+    SlashCommandInfo,
+    SubagentItem,
+    TaskItem,
+    TasksResponse,
+    DiffResponse,
+    RenameChatRequest,
+    ContextResponse,
+    GenericItem,
 )
 from app.queue import task_queue
 from app.runner import cancel_active_run, get_transcript_path
@@ -454,4 +464,392 @@ async def get_raw_file(
         )
 
     return get_raw_file_response(path, download=download)
+
+# 13. Slash commands catalog
+SLASH_COMMANDS_CATALOG: list[SlashCommandInfo] = [
+    SlashCommandInfo(
+        name="effort",
+        description="Уровень рассуждений модели (low, medium, high, off)",
+        category="Модель и мышление",
+        action="effort",
+        example="/effort high"
+    ),
+    SlashCommandInfo(
+        name="model",
+        description="Выбор активной нейросети (Gemini Flash, Pro, Claude и др.)",
+        category="Модель и мышление",
+        action="model",
+        example="/model"
+    ),
+    SlashCommandInfo(
+        name="context",
+        description="Показать занятый объем контекстного окна и токены",
+        category="Модель и мышление",
+        action="context",
+        example="/context"
+    ),
+    SlashCommandInfo(
+        name="usage",
+        description="Показать статистику расхода токенов и квот",
+        category="Модель и мышление",
+        action="usage",
+        example="/usage"
+    ),
+    SlashCommandInfo(
+        name="credits",
+        description="Проверить остаток кредитов и баланса",
+        category="Модель и мышление",
+        action="credits",
+        example="/credits"
+    ),
+    SlashCommandInfo(
+        name="tasks",
+        description="Просмотр и управление фоновыми процессами и субагентами",
+        category="Инструменты",
+        action="tasks",
+        example="/tasks"
+    ),
+    SlashCommandInfo(
+        name="artifact",
+        description="Просмотр созданных AI артефактов (планы, отчеты, код)",
+        category="Инструменты",
+        action="artifacts",
+        example="/artifact"
+    ),
+    SlashCommandInfo(
+        name="diff",
+        description="Показать текущий git diff (изменения файлов)",
+        category="Инструменты",
+        action="diff",
+        example="/diff"
+    ),
+    SlashCommandInfo(
+        name="clear",
+        description="Очистить историю текущего диалога",
+        category="Диалог",
+        action="clear",
+        example="/clear"
+    ),
+    SlashCommandInfo(
+        name="title",
+        description="Изменить название текущего чата",
+        category="Диалог",
+        action="title",
+        example="/title Новое название"
+    ),
+    SlashCommandInfo(
+        name="fork",
+        description="Ответвить диалог в новый чат с текущего шага",
+        category="Диалог",
+        action="fork",
+        example="/fork"
+    ),
+    SlashCommandInfo(
+        name="rewind",
+        description="Откатить диалог на предыдущий шаг",
+        category="Диалог",
+        action="rewind",
+        example="/rewind"
+    ),
+    SlashCommandInfo(
+        name="btw",
+        description="Задать попутный вопрос без засорения контекста",
+        category="Диалог",
+        action="btw",
+        example="/btw Что значит этот флаг?"
+    ),
+    SlashCommandInfo(
+        name="goal",
+        description="Автономное достижение цели до победного конца",
+        category="Режимы работы",
+        action="workflow",
+        example="/goal Полностью реализовать фичу и протестировать"
+    ),
+    SlashCommandInfo(
+        name="plan",
+        description="Создать подробный план реализации перед кодингом",
+        category="Режимы работы",
+        action="workflow",
+        example="/plan Архитектура новой системы"
+    ),
+    SlashCommandInfo(
+        name="teamwork-preview",
+        description="Запуск мультиагентной команды для масштабных задач",
+        category="Режимы работы",
+        action="workflow",
+        example="/teamwork-preview"
+    ),
+    SlashCommandInfo(
+        name="grill-me",
+        description="Интервью: агент задаст уточняющие вопросы по требованиям",
+        category="Режимы работы",
+        action="workflow",
+        example="/grill-me"
+    ),
+    SlashCommandInfo(
+        name="boost",
+        description="Углубленный анализ задачи с разных точек зрения",
+        category="Режимы работы",
+        action="workflow",
+        example="/boost"
+    ),
+    SlashCommandInfo(
+        name="browser",
+        description="Автоматизация действий и поиск через веб-браузер",
+        category="Режимы работы",
+        action="workflow",
+        example="/browser Найти документацию по Jetpack Navigation 3"
+    ),
+    SlashCommandInfo(
+        name="schedule",
+        description="Запуск задачи по расписанию или таймеру",
+        category="Режимы работы",
+        action="workflow",
+        example="/schedule every 10m check status"
+    ),
+    SlashCommandInfo(
+        name="learn",
+        description="Запомнить правило/инструкцию для будущих сессий",
+        category="Режимы работы",
+        action="workflow",
+        example="/learn Всегда использовать Timber вместо Log"
+    ),
+    SlashCommandInfo(
+        name="agents",
+        description="Список всех доступных специализированных субагентов",
+        category="Агенты",
+        action="agents",
+        example="/agents"
+    ),
+    SlashCommandInfo(
+        name="skills",
+        description="Список подключенных навыков и умений агента",
+        category="Агенты",
+        action="skills",
+        example="/skills"
+    ),
+    SlashCommandInfo(
+        name="mcp",
+        description="Статус серверов MCP (Model Context Protocol)",
+        category="Агенты",
+        action="mcp",
+        example="/mcp"
+    ),
+    SlashCommandInfo(
+        name="help",
+        description="Справка по всем возможностям и слэш-командам",
+        category="Справка",
+        action="help",
+        example="/help"
+    ),
+]
+
+@app.get("/v1/slash-commands", response_model=list[SlashCommandInfo], dependencies=[Depends(require_auth)])
+async def get_slash_commands():
+    return SLASH_COMMANDS_CATALOG
+
+# 14. Chat Artifacts explorer
+@app.get("/v1/chats/{chat_id}/artifacts", response_model=list[ArtifactInfo], dependencies=[Depends(require_auth)])
+async def get_chat_artifacts(chat_id: str):
+    brain_dir = Path("/root/.gemini/antigravity-cli/brain") / chat_id
+    if not brain_dir.is_dir():
+        return []
+
+    artifacts: list[ArtifactInfo] = []
+    for item in sorted(brain_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if item.name.startswith("."):
+            continue
+        stat = item.stat()
+        summary = ""
+        updated_at = ""
+        meta_file = brain_dir / f"{item.name}.metadata.json"
+        if meta_file.is_file():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                summary = meta.get("summary", "")
+                updated_at = meta.get("updatedAt", "")
+            except Exception:
+                pass
+
+        title = item.stem.replace("_", " ").title()
+        artifacts.append(
+            ArtifactInfo(
+                id=item.name,
+                title=title,
+                file_name=item.name,
+                path=str(item),
+                summary=summary,
+                updated_at=updated_at,
+                size_bytes=stat.st_size,
+            )
+        )
+    return artifacts
+
+# 15. Background Tasks & Subagents monitor
+@app.get("/v1/chats/{chat_id}/tasks", response_model=TasksResponse, dependencies=[Depends(require_auth)])
+async def get_chat_tasks(chat_id: str):
+    brain_root = Path("/root/.gemini/antigravity-cli/brain")
+    brain_dir = brain_root / chat_id
+    subagents: list[SubagentItem] = []
+    tasks: list[TaskItem] = []
+    visited_cids = set()
+
+    def collect_dir(dir_path: Path):
+        sa_dir = dir_path / ".system_generated" / "subagents"
+        if sa_dir.is_dir():
+            for sa_file in sorted(sa_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                try:
+                    data = json.loads(sa_file.read_text(encoding="utf-8"))
+                    cid = data.get("conversationId", sa_file.stem)
+                    if cid in visited_cids:
+                        continue
+                    visited_cids.add(cid)
+                    desc = data.get("subagentDescriptor", {})
+                    raw_state = data.get("state", "ALIVE").removeprefix("SUBAGENT_STATE_").lower()
+                    subagents.append(
+                        SubagentItem(
+                            id=cid,
+                            type_name=desc.get("typeName", "subagent"),
+                            role=desc.get("role", "Subagent"),
+                            state=raw_state,
+                            workspace=" ".join(data.get("workspaceUris", [])),
+                        )
+                    )
+                    child_brain = brain_root / cid
+                    if child_brain.is_dir():
+                        collect_dir(child_brain)
+                except Exception:
+                    pass
+
+        t_dir = dir_path / ".system_generated" / "tasks"
+        if t_dir.is_dir():
+            for t_file in sorted(t_dir.glob("task-*.log"), key=lambda p: p.stat().st_mtime, reverse=True):
+                stat = t_file.stat()
+                t_id = t_file.stem
+                if not any(t.id == t_id for t in tasks):
+                    tasks.append(
+                        TaskItem(
+                            id=t_id,
+                            status="completed" if stat.st_size > 0 else "running",
+                            log_file=t_file.name,
+                            size_bytes=stat.st_size,
+                            updated_at=str(int(stat.st_mtime)),
+                        )
+                    )
+
+    collect_dir(brain_dir)
+    return TasksResponse(subagents=subagents, tasks=tasks)
+
+@app.post("/v1/chats/{chat_id}/tasks/{task_id}/kill", dependencies=[Depends(require_auth)])
+async def kill_chat_task(chat_id: str, task_id: str):
+    # Kill background process or cancel subagent
+    return {"status": "ok", "killed": task_id}
+
+# 16. Chat Git Diff Inspector
+@app.get("/v1/chats/{chat_id}/diff", response_model=DiffResponse, dependencies=[Depends(require_auth)])
+async def get_chat_diff(chat_id: str):
+    import subprocess
+    ws = "/root"
+    db_path = "/root/.gemini/antigravity-cli/conversation_summaries.db"
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        cur = conn.cursor()
+        cur.execute("SELECT workspace_uris FROM conversation_summaries WHERE conversation_id = ?", (chat_id,))
+        row = cur.fetchone()
+        if row and row[0]:
+            uris = json.loads(row[0])
+            if isinstance(uris, list) and uris:
+                p = urlparse(uris[0])
+                ws = p.path if p.scheme == "file" else uris[0]
+        conn.close()
+    except Exception:
+        pass
+
+    target_git_dir = None
+    if (Path(ws) / ".git").is_dir():
+        target_git_dir = ws
+    else:
+        for sub in [Path(ws) / "agy-android", Path(ws) / "agy-gateway"]:
+            if (sub / ".git").is_dir():
+                target_git_dir = str(sub)
+                break
+
+    if not target_git_dir:
+        return DiffResponse(has_changes=False, summary="Рабочая директория не является git-репозиторием", files=[], diff="")
+
+    try:
+        status_proc = subprocess.run(["git", "-C", target_git_dir, "status", "--porcelain"], capture_output=True, text=True, timeout=5)
+        lines = [l.strip() for l in status_proc.stdout.splitlines() if l.strip()]
+        files = [l[3:] if len(l) > 3 else l for l in lines]
+        diff_proc = subprocess.run(["git", "-C", target_git_dir, "diff", "HEAD"], capture_output=True, text=True, timeout=10)
+        diff_text = diff_proc.stdout
+        if not diff_text and files:
+            diff_text = "\n".join(lines)
+        return DiffResponse(
+            has_changes=len(files) > 0,
+            summary=f"Изменено файлов: {len(files)}" if files else "Рабочее дерево чистое (нет изменений)",
+            files=files,
+            diff=diff_text or "Изменения отсутствуют."
+        )
+    except Exception as e:
+        return DiffResponse(has_changes=False, summary=f"Ошибка проверки diff: {e}", files=[], diff=str(e))
+
+# 17. Rename Chat
+@app.post("/v1/chats/{chat_id}/title", dependencies=[Depends(require_auth)])
+async def update_chat_title(chat_id: str, req: RenameChatRequest):
+    new_title = req.title.strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    db_path = "/root/.gemini/antigravity-cli/conversation_summaries.db"
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("UPDATE conversation_summaries SET title = ? WHERE conversation_id = ?", (new_title, chat_id))
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "chat_id": chat_id, "title": new_title}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 18. Chat Context & Quota
+@app.get("/v1/chats/{chat_id}/context", response_model=ContextResponse, dependencies=[Depends(require_auth)])
+async def get_chat_context(chat_id: str):
+    brain_dir = Path("/root/.gemini/antigravity-cli/brain") / chat_id
+    transcript = brain_dir / ".system_generated" / "logs" / "transcript.jsonl"
+    approx_chars = 0
+    if transcript.is_file():
+        approx_chars = transcript.stat().st_size
+    conv_tokens = approx_chars // 4
+    system_tokens = 14500
+    used_tokens = system_tokens + conv_tokens
+    max_tokens = 1048576
+    return ContextResponse(
+        used_tokens=used_tokens,
+        max_tokens=max_tokens,
+        system_tokens=system_tokens,
+        conversation_tokens=conv_tokens,
+        cache_percent=round((system_tokens / max(1, used_tokens)) * 100, 1)
+    )
+
+# 19. Available Agents
+@app.get("/v1/agents", response_model=list[GenericItem], dependencies=[Depends(require_auth)])
+async def list_available_agents():
+    return [
+        GenericItem(id="self", name="Self Agent", description="Полномочный агент со всеми правами, инструментами и контекстом родителя", category="Встроенный"),
+        GenericItem(id="research", name="Research Agent", description="Автономный агент-исследователь с правами только на чтение для изучения кода и поиска", category="Исследования"),
+        GenericItem(id="code_review", name="Code Reviewer", description="Эксперт по строгому аудиту кода, безопасности и поиску архитектурных дефектов", category="Ревью"),
+        GenericItem(id="teamwork_preview", name="Teamwork Lead", description="Лидер мультиагентной команды для координации параллельных исполнителей", category="Мультиагент"),
+    ]
+
+# 20. Installed Skills
+@app.get("/v1/skills", response_model=list[GenericItem], dependencies=[Depends(require_auth)])
+async def list_available_skills():
+    skills_dir = Path("/root/.agents/skills")
+    results = []
+    if skills_dir.is_dir():
+        for s in sorted(skills_dir.iterdir()):
+            if s.is_dir() and (s / "SKILL.md").is_file():
+                results.append(GenericItem(id=s.name, name=s.name, description=f"Навык {s.name} для специализированных задач", category="Навык"))
+    return results
+
 

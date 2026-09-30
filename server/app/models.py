@@ -141,3 +141,60 @@ class HealthResponse(BaseModel):
     gateway: str
     agy_available: bool
     max_concurrent_runs: int
+
+class ArtifactInfo(BaseModel):
+    id: str
+    title: str
+    file_name: str
+    path: str
+    summary: str = ""
+    updated_at: str = ""
+    size_bytes: int = 0
+
+class SubagentItem(BaseModel):
+    id: str
+    type_name: str
+    role: str
+    state: str
+    workspace: str = ""
+
+class TaskItem(BaseModel):
+    id: str
+    status: str
+    log_file: str
+    size_bytes: int = 0
+    updated_at: str = ""
+
+class TasksResponse(BaseModel):
+    subagents: list[SubagentItem] = []
+    tasks: list[TaskItem] = []
+
+class SlashCommandInfo(BaseModel):
+    name: str
+    description: str
+    category: str
+    action: str = "insert"
+    example: str = ""
+
+class DiffResponse(BaseModel):
+    has_changes: bool
+    summary: str
+    files: list[str] = Field(default_factory=list)
+    diff: str = ""
+
+class RenameChatRequest(BaseModel):
+    title: str
+
+class ContextResponse(BaseModel):
+    used_tokens: int
+    max_tokens: int
+    system_tokens: int
+    conversation_tokens: int
+    cache_percent: float
+
+class GenericItem(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: Optional[str] = None
+

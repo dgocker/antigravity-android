@@ -495,4 +495,44 @@ class ChatRepository(
             "Не удалось загрузить содержимое файла: ${e.message}"
         }
     }
+
+    suspend fun getDiff(conversationId: String): DiffResponseDto = withContext(Dispatchers.IO) {
+        try {
+            api.getDiff(conversationId)
+        } catch (e: Exception) {
+            DiffResponseDto(hasChanges = false, summary = "Ошибка получения diff: ${e.message}", diff = e.message ?: "")
+        }
+    }
+
+    suspend fun renameChat(conversationId: String, newTitle: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            api.updateChatTitle(conversationId, RenameChatRequestDto(newTitle)).isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun getChatContext(conversationId: String): ContextResponseDto = withContext(Dispatchers.IO) {
+        try {
+            api.getChatContext(conversationId)
+        } catch (e: Exception) {
+            ContextResponseDto()
+        }
+    }
+
+    suspend fun getAgents(): List<GenericItemDto> = withContext(Dispatchers.IO) {
+        try {
+            api.getAgents()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getSkills(): List<GenericItemDto> = withContext(Dispatchers.IO) {
+        try {
+            api.getSkills()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 }

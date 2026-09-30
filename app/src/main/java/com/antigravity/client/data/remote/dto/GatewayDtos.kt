@@ -199,3 +199,29 @@ data class SlashCommandDto(
     @SerializedName("action") val action: String = "insert",
     @SerializedName("example") val example: String = ""
 )
+
+data class DiffResponseDto(
+    @SerializedName("has_changes") val hasChanges: Boolean = false,
+    @SerializedName("summary") val summary: String = "",
+    @SerializedName("files") val files: List<String> = emptyList(),
+    @SerializedName("diff") val diff: String = ""
+)
+
+data class RenameChatRequestDto(
+    @SerializedName("title") val title: String
+)
+
+data class ContextResponseDto(
+    @SerializedName("used_tokens") val usedTokens: Long = 0L,
+    @SerializedName("max_tokens") val maxTokens: Long = 1048576L,
+    @SerializedName("system_tokens") val systemTokens: Long = 0L,
+    @SerializedName("conversation_tokens") val conversationTokens: Long = 0L,
+    @SerializedName("cache_percent") val cachePercent: Float = 0f
+)
+
+data class GenericItemDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("description") val description: String,
+    @SerializedName("category") val category: String? = null
+)

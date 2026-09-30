@@ -88,4 +88,22 @@ interface GatewayApi {
 
     @POST("v1/chats/{id}/tasks/{taskId}/kill")
     suspend fun killTask(@Path("id") chatId: String, @Path("taskId") taskId: String): Response<Unit>
+
+    @GET("v1/chats/{id}/diff")
+    suspend fun getDiff(@Path("id") chatId: String): DiffResponseDto
+
+    @POST("v1/chats/{id}/title")
+    suspend fun updateChatTitle(
+        @Path("id") chatId: String,
+        @Body body: RenameChatRequestDto
+    ): Response<Unit>
+
+    @GET("v1/chats/{id}/context")
+    suspend fun getChatContext(@Path("id") chatId: String): ContextResponseDto
+
+    @GET("v1/agents")
+    suspend fun getAgents(): List<GenericItemDto>
+
+    @GET("v1/skills")
+    suspend fun getSkills(): List<GenericItemDto>
 }

@@ -20,31 +20,31 @@ import java.io.File
 import java.util.UUID
 
 val DEFAULT_SLASH_COMMANDS = listOf(
-    SlashCommandDto("model", "Выбор активной нейросети (Gemini Flash, Pro, Claude и др.)", "Модель", "select_model", "/model"),
-    SlashCommandDto("tasks", "Просмотр и управление фоновыми процессами и субагентами", "Инструменты", "view_tasks", "/tasks"),
-    SlashCommandDto("artifact", "Просмотр созданных AI артефактов (планы, отчеты, код)", "Инструменты", "view_artifacts", "/artifact"),
-    SlashCommandDto("artifacts", "Список всех созданных артефактов текущего диалога", "Инструменты", "view_artifacts", "/artifacts"),
-    SlashCommandDto("diff", "Показать текущий git diff (изменения файлов)", "Инструменты", "insert", "/diff"),
+    SlashCommandDto("effort", "Уровень рассуждений модели (low, medium, high, off)", "Модель", "effort", "/effort high"),
+    SlashCommandDto("model", "Выбор активной нейросети (Gemini Flash, Pro, Claude и др.)", "Модель", "model", "/model"),
+    SlashCommandDto("context", "Показать занятый объем контекстного окна и токены", "Модель", "context", "/context"),
+    SlashCommandDto("usage", "Показать статистику расхода токенов и квот", "Модель", "usage", "/usage"),
+    SlashCommandDto("credits", "Проверить остаток кредитов и баланса", "Модель", "credits", "/credits"),
+    SlashCommandDto("tasks", "Просмотр и управление фоновыми процессами и субагентами", "Инструменты", "tasks", "/tasks"),
+    SlashCommandDto("artifact", "Просмотр созданных AI артефактов (планы, отчеты, код)", "Инструменты", "artifacts", "/artifact"),
+    SlashCommandDto("artifacts", "Список всех созданных артефактов текущего диалога", "Инструменты", "artifacts", "/artifacts"),
+    SlashCommandDto("diff", "Показать текущий git diff (изменения файлов)", "Инструменты", "diff", "/diff"),
     SlashCommandDto("clear", "Очистить историю текущего диалога", "Диалог", "clear", "/clear"),
-    SlashCommandDto("title", "Изменить название текущего чата", "Диалог", "insert", "/title "),
-    SlashCommandDto("fork", "Ответвить диалог в новый чат с текущего шага", "Диалог", "insert", "/fork"),
-    SlashCommandDto("rewind", "Откатить диалог на предыдущий шаг", "Диалог", "insert", "/rewind"),
-    SlashCommandDto("btw", "Задать попутный вопрос без засорения контекста", "Диалог", "insert", "/btw "),
-    SlashCommandDto("effort", "Уровень рассуждений модели (low, medium, high)", "Модель", "insert", "/effort "),
-    SlashCommandDto("context", "Показать занятый объем контекстного окна и токены", "Модель", "insert", "/context"),
-    SlashCommandDto("usage", "Показать статистику расхода токенов и квот", "Модель", "insert", "/usage"),
-    SlashCommandDto("credits", "Проверить остаток кредитов и баланса", "Модель", "insert", "/credits"),
-    SlashCommandDto("goal", "Автономное достижение цели до победного конца", "Режимы", "insert", "/goal "),
-    SlashCommandDto("plan", "Создать подробный план реализации перед кодингом", "Режимы", "insert", "/plan "),
-    SlashCommandDto("teamwork-preview", "Запуск мультиагентной команды для масштабных задач", "Режимы", "insert", "/teamwork-preview"),
-    SlashCommandDto("grill-me", "Интервью: агент задаст уточняющие вопросы по требованиям", "Режимы", "insert", "/grill-me"),
-    SlashCommandDto("boost", "Углубленный анализ задачи с разных точек зрения", "Режимы", "insert", "/boost "),
-    SlashCommandDto("browser", "Автоматизация действий и поиск через веб-браузер", "Режимы", "insert", "/browser "),
-    SlashCommandDto("schedule", "Запуск задачи по расписанию или таймеру", "Режимы", "insert", "/schedule "),
-    SlashCommandDto("learn", "Запомнить правило/инструкцию для будущих сессий", "Режимы", "insert", "/learn "),
-    SlashCommandDto("agents", "Список всех доступных специализированных субагентов", "Агенты", "insert", "/agents"),
-    SlashCommandDto("skills", "Список подключенных навыков и умений агента", "Агенты", "insert", "/skills"),
-    SlashCommandDto("mcp", "Статус серверов MCP (Model Context Protocol)", "Агенты", "insert", "/mcp"),
+    SlashCommandDto("title", "Изменить название текущего чата", "Диалог", "title", "/title Новое название"),
+    SlashCommandDto("fork", "Ответвить диалог в новый чат с текущего шага", "Диалог", "fork", "/fork"),
+    SlashCommandDto("rewind", "Откатить диалог на предыдущий шаг", "Диалог", "rewind", "/rewind"),
+    SlashCommandDto("btw", "Задать попутный вопрос без засорения контекста", "Диалог", "btw", "/btw Что означает этот флаг?"),
+    SlashCommandDto("goal", "Автономное достижение цели до победного конца", "Режимы", "workflow", "/goal Достичь цели..."),
+    SlashCommandDto("plan", "Создать подробный план реализации перед кодингом", "Режимы", "workflow", "/plan Спланировать..."),
+    SlashCommandDto("teamwork-preview", "Запуск мультиагентной команды для масштабных задач", "Режимы", "workflow", "/teamwork-preview"),
+    SlashCommandDto("grill-me", "Интервью: агент задаст уточняющие вопросы по требованиям", "Режимы", "workflow", "/grill-me"),
+    SlashCommandDto("boost", "Углубленный анализ задачи с разных точек зрения", "Режимы", "workflow", "/boost "),
+    SlashCommandDto("browser", "Автоматизация действий и поиск через веб-браузер", "Режимы", "workflow", "/browser "),
+    SlashCommandDto("schedule", "Запуск задачи по расписанию или таймеру", "Режимы", "workflow", "/schedule "),
+    SlashCommandDto("learn", "Запомнить правило/инструкцию для будущих сессий", "Режимы", "workflow", "/learn "),
+    SlashCommandDto("agents", "Список всех доступных специализированных субагентов", "Агенты", "agents", "/agents"),
+    SlashCommandDto("skills", "Список подключенных навыков и умений агента", "Агенты", "skills", "/skills"),
+    SlashCommandDto("mcp", "Статус серверов MCP (Model Context Protocol)", "Агенты", "mcp", "/mcp"),
     SlashCommandDto("help", "Справка по всем возможностям и слэш-командам", "Справка", "help", "/help")
 )
 
@@ -182,6 +182,360 @@ class ChatViewModel(
     fun selectEffort(effort: String) {
         selectedEffort.value = effort
         tokenStore.selectedEffort = effort
+    }
+
+    data class WorkflowDialogData(
+        val commandName: String,
+        val title: String,
+        val description: String,
+        val hint: String = "Введите текст или спецификацию задачи..."
+    )
+
+    val showEffortSheet = MutableStateFlow(false)
+    val showModelSheet = MutableStateFlow(false)
+    val showTasksSheet = MutableStateFlow(false)
+    val showArtifactsSheet = MutableStateFlow(false)
+    val showDiffSheet = MutableStateFlow(false)
+    val diffData = MutableStateFlow<DiffResponseDto?>(null)
+    val isDiffLoading = MutableStateFlow(false)
+
+    val showRenameDialog = MutableStateFlow(false)
+    val showContextSheet = MutableStateFlow(false)
+    val contextData = MutableStateFlow<ContextResponseDto?>(null)
+    val isContextLoading = MutableStateFlow(false)
+
+    val showAgentsSheet = MutableStateFlow(false)
+    val agentsList = MutableStateFlow<List<GenericItemDto>>(emptyList())
+    val isAgentsLoading = MutableStateFlow(false)
+
+    val showSkillsSheet = MutableStateFlow(false)
+    val skillsList = MutableStateFlow<List<GenericItemDto>>(emptyList())
+    val isSkillsLoading = MutableStateFlow(false)
+
+    val showCommandsCatalogSheet = MutableStateFlow(false)
+    val activeWorkflowDialog = MutableStateFlow<WorkflowDialogData?>(null)
+    val showClearConfirmDialog = MutableStateFlow(false)
+    val showForkConfirmDialog = MutableStateFlow(false)
+    val showBtwDialog = MutableStateFlow(false)
+    val btwInitialQuery = MutableStateFlow("")
+
+    val toastMessage = MutableStateFlow<String?>(null)
+
+    fun confirmClearChat() {
+        viewModelScope.launch {
+            inputMessage.value = "/clear"
+            sendMessage()
+            toastMessage.value = "Контекст чата очищен"
+        }
+    }
+
+    fun confirmForkChat() {
+        viewModelScope.launch {
+            inputMessage.value = "/fork"
+            sendMessage()
+            toastMessage.value = "Сессия разветвлена"
+        }
+    }
+
+    fun submitBtwQuestion(question: String) {
+        if (question.isNotBlank()) {
+            inputMessage.value = "/btw ${question.trim()}"
+            sendMessage()
+        }
+    }
+
+    fun loadDiff() {
+        viewModelScope.launch {
+            isDiffLoading.value = true
+            try {
+                diffData.value = repository.getDiff(conversationId)
+            } finally {
+                isDiffLoading.value = false
+            }
+        }
+    }
+
+    fun renameChat(newTitle: String) {
+        viewModelScope.launch {
+            val success = repository.renameChat(conversationId, newTitle)
+            if (success) {
+                toastMessage.value = "Чат переименован: $newTitle"
+                refreshChat()
+            }
+        }
+    }
+
+    fun loadContext() {
+        viewModelScope.launch {
+            isContextLoading.value = true
+            try {
+                contextData.value = repository.getChatContext(conversationId)
+            } finally {
+                isContextLoading.value = false
+            }
+        }
+    }
+
+    fun loadAgents() {
+        viewModelScope.launch {
+            isAgentsLoading.value = true
+            try {
+                agentsList.value = repository.getAgents()
+            } finally {
+                isAgentsLoading.value = false
+            }
+        }
+    }
+
+    fun loadSkills() {
+        viewModelScope.launch {
+            isSkillsLoading.value = true
+            try {
+                skillsList.value = repository.getSkills()
+            } finally {
+                isSkillsLoading.value = false
+            }
+        }
+    }
+
+    fun launchWorkflow(commandName: String, prompt: String) {
+        val trimmed = prompt.trim()
+        val fullPrompt = when (commandName) {
+            "goal" -> "/goal $trimmed"
+            "plan" -> "/plan $trimmed"
+            "teamwork-preview" -> if (trimmed.isEmpty()) "/teamwork-preview" else "/teamwork-preview $trimmed"
+            "grill-me" -> if (trimmed.isEmpty()) "/grill-me" else "/grill-me $trimmed"
+            "boost" -> "/boost $trimmed"
+            "browser" -> "/browser $trimmed"
+            "schedule" -> "/schedule $trimmed"
+            "learn" -> "/learn $trimmed"
+            else -> "/$commandName $trimmed"
+        }
+        inputMessage.value = fullPrompt
+        sendMessage()
+    }
+
+    fun handleSlashCommand(rawCommandText: String): Boolean {
+        val trimmed = rawCommandText.trim()
+        if (!trimmed.startsWith("/")) return false
+
+        val parts = trimmed.removePrefix("/").split(" ", limit = 2)
+        val cmd = parts[0].lowercase()
+        val args = if (parts.size > 1) parts[1].trim() else ""
+
+        when (cmd) {
+            "model" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    selectModel(args)
+                    toastMessage.value = "Модель: $args"
+                } else {
+                    showModelSheet.value = true
+                }
+                return true
+            }
+            "tasks" -> {
+                inputMessage.value = ""
+                loadTasks()
+                showTasksSheet.value = true
+                return true
+            }
+            "artifact", "artifacts" -> {
+                inputMessage.value = ""
+                loadArtifacts()
+                showArtifactsSheet.value = true
+                return true
+            }
+            "effort" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    val validEffort = when (args.lowercase()) {
+                        "high", "высокий" -> "high"
+                        "medium", "средний" -> "medium"
+                        "low", "низкий" -> "low"
+                        "off", "выкл" -> "off"
+                        else -> null
+                    }
+                    if (validEffort != null) {
+                        selectEffort(validEffort)
+                        toastMessage.value = "Уровень рассуждений: ${validEffort.uppercase()}"
+                    } else {
+                        showEffortSheet.value = true
+                    }
+                } else {
+                    showEffortSheet.value = true
+                }
+                return true
+            }
+            "diff" -> {
+                inputMessage.value = ""
+                loadDiff()
+                showDiffSheet.value = true
+                return true
+            }
+            "title", "rename" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    renameChat(args)
+                } else {
+                    showRenameDialog.value = true
+                }
+                return true
+            }
+            "context", "usage", "credits" -> {
+                inputMessage.value = ""
+                loadContext()
+                showContextSheet.value = true
+                return true
+            }
+            "clear" -> {
+                inputMessage.value = ""
+                showClearConfirmDialog.value = true
+                return true
+            }
+            "fork" -> {
+                inputMessage.value = ""
+                showForkConfirmDialog.value = true
+                return true
+            }
+            "btw" -> {
+                inputMessage.value = ""
+                btwInitialQuery.value = args
+                showBtwDialog.value = true
+                return true
+            }
+            "agents" -> {
+                inputMessage.value = ""
+                loadAgents()
+                showAgentsSheet.value = true
+                return true
+            }
+            "skills" -> {
+                inputMessage.value = ""
+                loadSkills()
+                showSkillsSheet.value = true
+                return true
+            }
+            "help" -> {
+                inputMessage.value = ""
+                showCommandsCatalogSheet.value = true
+                return true
+            }
+            "goal" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    selectEffort("high")
+                    launchWorkflow("goal", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "goal",
+                        title = "Автономная цель (/goal)",
+                        description = "Агент будет решать задачу автономно до полного достижения цели без остановки.",
+                        hint = "Опишите цель (например: протестировать и исправить все ошибки сборки)..."
+                    )
+                }
+                return true
+            }
+            "plan" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    launchWorkflow("plan", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "plan",
+                        title = "Составление плана (/plan)",
+                        description = "Агент составит пошаговый архитектурный план перед кодингом.",
+                        hint = "Опишите функционал или изменения для планирования..."
+                    )
+                }
+                return true
+            }
+            "teamwork-preview" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    launchWorkflow("teamwork-preview", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "teamwork-preview",
+                        title = "Мультиагентная команда (/teamwork-preview)",
+                        description = "Запуск параллельной команды агентов (исследователь, разработчик, ревьюер).",
+                        hint = "Опишите задачу для мультиагентной команды..."
+                    )
+                }
+                return true
+            }
+            "grill-me" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    launchWorkflow("grill-me", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "grill-me",
+                        title = "Интервью по требованиям (/grill-me)",
+                        description = "Агент задаст серию уточняющих вопросов, чтобы детально прояснить требования.",
+                        hint = "Тема интервью или область требований..."
+                    )
+                }
+                return true
+            }
+            "boost" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    launchWorkflow("boost", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "boost",
+                        title = "Глубокий анализ (/boost)",
+                        description = "Углубленный анализ задачи с разных перспектив с максимальной строгостью.",
+                        hint = "Опишите проблему или тему анализа..."
+                    )
+                }
+                return true
+            }
+            "browser" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    launchWorkflow("browser", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "browser",
+                        title = "Веб-браузер (/browser)",
+                        description = "Автоматизация поиска и чтения документации через веб.",
+                        hint = "Что нужно найти или изучить в браузере?..."
+                    )
+                }
+                return true
+            }
+            "schedule" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    launchWorkflow("schedule", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "schedule",
+                        title = "Запуск по расписанию (/schedule)",
+                        description = "Запуск периодической задачи или разового таймера.",
+                        hint = "например: every 10m check server health..."
+                    )
+                }
+                return true
+            }
+            "learn" -> {
+                inputMessage.value = ""
+                if (args.isNotEmpty()) {
+                    launchWorkflow("learn", args)
+                } else {
+                    activeWorkflowDialog.value = WorkflowDialogData(
+                        commandName = "learn",
+                        title = "Запомнить правило (/learn)",
+                        description = "Агент сохранит указанное правило для всех будущих сессий.",
+                        hint = "Например: Всегда форматировать код через ktlint..."
+                    )
+                }
+                return true
+            }
+        }
+        return false
     }
 
     init {
