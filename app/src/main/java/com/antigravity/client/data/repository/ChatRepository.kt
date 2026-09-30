@@ -317,9 +317,23 @@ class ChatRepository(
         return api.cancelRun(conversationId)
     }
 
-    suspend fun fetchStepsHistory(conversationId: String, afterStep: Int? = null, limit: Int = 500) {
-        val stepDtos = api.getChatSteps(conversationId, afterStep, limit)
-        val entities = stepDtos.map { dto ->
+    suspend fun deleteCheckpointSteps(conversationId: String) {
+        stepDao.deleteCheckpointSteps(conversationId)
+    }
+
+    suspend fun fetchStepsHistory(conversationId: String, afterStep: Int? = null, limit: Int = 100) {
+        stepDao.deleteCheckpointSteps(conversationId)
+        val actualAfterStep = afterStep ?: stepDao.getMaxStepIndex(conversationId)
+        val stepDtos = api.getChatSteps(conversationId, actualAfterStep, limit)
+        if (stepDtos.isEmpty()) return
+
+        val entities = stepDtos.mapNotNull { dto ->
+            if (dto.type == "CHECKPOINT" ||
+                dto.content?.contains("<CONTEXT_SUMMARY>") == true ||
+                dto.content?.startsWith("# Resuming from a compaction") == true
+            ) {
+                return@mapNotNull null
+            }
             StepEntity(
                 conversationId = conversationId,
                 runId = "",
@@ -360,7 +374,9 @@ class ChatRepository(
                 error = dto.error
             )
         }
-        stepDao.insertAll(entities)
+        if (entities.isNotEmpty()) {
+            stepDao.insertAll(entities)
+        }
     }
 
     suspend fun getAvailableModels(): List<ModelOption> {

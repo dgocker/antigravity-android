@@ -96,6 +96,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from starlette.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 def get_workspace_for_conversation(conv_id: str) -> Optional[str]:
     # Check conversation_summaries.db first
     db_path = settings.conversation_summaries_db

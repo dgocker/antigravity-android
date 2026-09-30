@@ -87,8 +87,19 @@ def parse_transcript_line_to_step(raw_line: str) -> Optional[NormalizedStep]:
     created_at = data.get("created_at", "")
     thinking = data.get("thinking")
     content = data.get("content")
+
+    # Filter out internal checkpoints and compaction summaries
+    if step_type in ("CHECKPOINT", "SYSTEM"):
+        return None
+    if source == "SYSTEM" and step_type != "USER_INPUT":
+        return None
     if content and isinstance(content, str):
-        if content.startswith("<SYSTEM_MESSAGE>") or content.startswith("[Notice] All your subagents"):
+        if (
+            content.startswith("<SYSTEM_MESSAGE>")
+            or content.startswith("[Notice] All your subagents")
+            or content.startswith("# Resuming from a compaction")
+            or "<CONTEXT_SUMMARY>" in content
+        ):
             return None
 
     error = data.get("error")

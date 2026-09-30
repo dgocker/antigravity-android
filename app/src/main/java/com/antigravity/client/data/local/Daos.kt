@@ -37,7 +37,9 @@ interface StepDao {
     suspend fun insertAll(steps: List<StepEntity>)
     fun getStepsForConversation(conversationId: String): Flow<List<StepEntity>>
     suspend fun getStep(conversationId: String, stepIndex: Int): StepEntity?
+    suspend fun getMaxStepIndex(conversationId: String): Int?
     suspend fun deleteForConversation(conversationId: String)
+    suspend fun deleteCheckpointSteps(conversationId: String)
 }
 
 interface RunDao {
@@ -371,10 +373,34 @@ class StepDaoImpl(private val dbHelper: AppDatabase) : StepDao {
         }
     }
 
+    override suspend fun getMaxStepIndex(conversationId: String): Int? = withContext(Dispatchers.IO) {
+        val db = dbHelper.readableDatabase
+        db.rawQuery(
+            "SELECT MAX(stepIndex) FROM steps WHERE conversationId = ?",
+            arrayOf(conversationId)
+        ).use { cursor ->
+            if (cursor.moveToNext() && !cursor.isNull(0)) {
+                cursor.getInt(0)
+            } else null
+        }
+    }
+
     override suspend fun deleteForConversation(conversationId: String) = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
         db.delete("steps", "conversationId = ?", arrayOf(conversationId))
         notifyChange()
+    }
+
+    override suspend fun deleteCheckpointSteps(conversationId: String) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val deleted = db.delete(
+            "steps",
+            "conversationId = ? AND (type = 'CHECKPOINT' OR content LIKE '%# Resuming from a compaction%' OR content LIKE '%<CONTEXT_SUMMARY>%')",
+            arrayOf(conversationId)
+        )
+        if (deleted > 0) {
+            notifyChange()
+        }
     }
 
     private fun StepEntity.toContentValues(): ContentValues {

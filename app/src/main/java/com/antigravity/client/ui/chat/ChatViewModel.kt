@@ -110,6 +110,7 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 isLoadingHistory.value = true
+                repository.deleteCheckpointSteps(conversationId)
                 repository.fetchStepsHistory(conversationId)
             } catch (e: Exception) {
                 // Ignore, will use cache
@@ -395,8 +396,6 @@ class ChatViewModel(
         // Mark outbox completed & update delivery status
         repository.deleteOutboxItem(pendingId)
         repository.updatePendingMessageStatus(conversationId, pendingId, MessageDeliveryStatus.SENT)
-
-        triggerBackgroundSyncLoop()
     }
 
     fun retryPendingMessage(pendingId: String) {
@@ -454,27 +453,6 @@ class ChatViewModel(
                     }
                 }
             } catch (_: Exception) {}
-        }
-    }
-
-    private fun triggerBackgroundSyncLoop() {
-        viewModelScope.launch {
-            var checks = 0
-            while (checks < 90) {
-                kotlinx.coroutines.delay(2000)
-                checks++
-                val isTurnRunning = (conversation.value?.status?.contains("RUNNING", ignoreCase = true) == true) ||
-                                    activeDeltaText.value.isNotEmpty() ||
-                                    (liveActivity.value != null && liveActivity.value?.activity != "idle")
-
-                try {
-                    repository.fetchStepsHistory(conversationId)
-                } catch (_: Exception) {}
-
-                if (!isTurnRunning && checks > 2) {
-                    break
-                }
-            }
         }
     }
 
