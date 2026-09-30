@@ -83,6 +83,8 @@ class ConnectionViewModel @JvmOverloads constructor(
                         "SSL certificate verification failed. If using self-signed cert or raw IP, enable 'Trust self-signed SSL'."
                     msg.contains("CLEARTEXT", ignoreCase = true) ->
                         "Cleartext HTTP is not permitted. Use https:// or verify network security configuration."
+                    msg.contains("Unable to parse TLS packet header", ignoreCase = true) ->
+                        "Порт ожидает обычный HTTP (без SSL). Укажите http:// вместо https:// или используйте HTTPS-порт сервера (например, 8444)."
                     else -> "Connection error: $msg"
                 }
                 _uiState.value = ConnectionUiState.Error(helpfulMsg)
