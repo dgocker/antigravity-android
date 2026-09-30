@@ -56,6 +56,10 @@ class SyncEngine(
         webSocketManager.reconnect()
     }
 
+    fun subscribeToConversation(conversationId: String) {
+        webSocketManager.subscribe(conversationId)
+    }
+
     suspend fun processEvent(json: JSONObject) {
         val type = json.optString("type")
         val seq = json.optLong("seq", -1L)

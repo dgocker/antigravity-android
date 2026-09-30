@@ -49,6 +49,25 @@ class WebSocketManager(
         connect()
     }
 
+    private var activeConversationId: String? = null
+
+    fun subscribe(conversationId: String) {
+        activeConversationId = conversationId
+        val ws = webSocket
+        if (ws != null && (_connectionState.value == ConnectionStatus.LIVE || _connectionState.value == ConnectionStatus.REPLAYING)) {
+            try {
+                val json = JSONObject().apply {
+                    put("type", "subscribe")
+                    put("conversation_id", conversationId)
+                }
+                ws.send(json.toString())
+                Log.i(tag, "Sent subscribe for conversation: $conversationId")
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to send subscribe: ${e.message}")
+            }
+        }
+    }
+
     private fun connect() {
         if (!isRunning.get()) return
 
@@ -65,7 +84,8 @@ class WebSocketManager(
         var base = tokenStore.serverUrl.trim()
         val wsScheme = if (base.startsWith("https://", ignoreCase = true)) "wss://" else "ws://"
         val hostPart = base.replace(Regex("^https?://", RegexOption.IGNORE_CASE), "").trimEnd('/')
-        val wsUrl = "$wsScheme$hostPart/v1/ws?token=$token&after=$lastSeq"
+        val convParam = if (!activeConversationId.isNullOrBlank()) "&conversation_id=$activeConversationId" else ""
+        val wsUrl = "$wsScheme$hostPart/v1/ws?token=$token&after=$lastSeq$convParam"
 
         val request = Request.Builder()
             .url(wsUrl)
@@ -76,6 +96,19 @@ class WebSocketManager(
                 Log.i(tag, "WebSocket connected successfully (after=$lastSeq)")
                 reconnectAttempt = 0
                 _connectionState.value = if (lastSeq > 0) ConnectionStatus.REPLAYING else ConnectionStatus.LIVE
+
+                activeConversationId?.let { cid ->
+                    try {
+                        val json = JSONObject().apply {
+                            put("type", "subscribe")
+                            put("conversation_id", cid)
+                        }
+                        webSocket.send(json.toString())
+                        Log.i(tag, "Sent initial subscribe onOpen for: $cid")
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to send initial subscribe: ${e.message}")
+                    }
+                }
 
                 // Transition to LIVE after a brief replay window
                 scope.launch {

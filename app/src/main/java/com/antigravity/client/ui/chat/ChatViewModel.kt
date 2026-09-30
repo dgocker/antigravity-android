@@ -90,6 +90,9 @@ class ChatViewModel(
     }
 
     init {
+        // Subscribe WebSocket to this active conversation for live transcript streaming
+        syncEngine.subscribeToConversation(conversationId)
+
         // Load available models
         viewModelScope.launch {
             try {
