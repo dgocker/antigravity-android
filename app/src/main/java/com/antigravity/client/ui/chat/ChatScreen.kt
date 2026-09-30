@@ -570,7 +570,14 @@ fun ChatScreen(
     }
 
     val displayDeltaText = if (hasFinalizedAgentText) "" else (if (activeDeltaText.isNotEmpty()) activeDeltaText else preservedDeltaText)
-    val isLiveTurnVisible = (liveActivity != null && liveActivity?.activity != "idle") || displayDeltaText.isNotEmpty()
+    val isAgentBubbleHandlingTurn = (displayedBubbles.lastOrNull() is ConversationBubble.Agent) && isRunning
+    val isAskQuestion = liveActivity != null && (
+        liveActivity?.toolName == "ask_question" ||
+        liveActivity?.detail?.contains("ask_question", ignoreCase = true) == true ||
+        liveActivity?.parameters?.containsKey("questions") == true ||
+        liveActivity?.parameters?.containsKey("question") == true
+    )
+    val isLiveTurnVisible = isAskQuestion || (!isAgentBubbleHandlingTurn && ((liveActivity != null && liveActivity?.activity != "idle") || displayDeltaText.isNotEmpty()))
 
     var isInitialScrollDone by remember { mutableStateOf(false) }
 
@@ -886,6 +893,7 @@ fun ChatScreen(
                                     bubble = bubble,
                                     viewModel = viewModel,
                                     isTurnRunning = isTurnRunning,
+                                    liveActivity = if (isLastBubble) liveActivity else null,
                                     onPreviewImage = { url, name ->
                                         previewImageUrl = url
                                         previewImageName = name
@@ -1444,6 +1452,7 @@ private fun AgentBubble(
     bubble: ConversationBubble.Agent,
     viewModel: ChatViewModel,
     isTurnRunning: Boolean = false,
+    liveActivity: LiveActivity? = null,
     onPreviewImage: (String, String?) -> Unit
 ) {
     val context = LocalContext.current
@@ -1539,10 +1548,19 @@ private fun AgentBubble(
             }
         }
 
-        // Tool Calls: If 3 or more, wrap in a compact collapsible header
-        if (bubble.toolCallsWithResults.isNotEmpty()) {
+        val fileToolNames = remember { setOf("replace_file_content", "write_to_file", "multi_replace_file_content") }
+        val executedTools = remember(bubble.toolCallsWithResults, bubble.diffs) {
+            if (bubble.diffs.isNotEmpty()) {
+                bubble.toolCallsWithResults.filterNot { it.first.name in fileToolNames }
+            } else {
+                bubble.toolCallsWithResults
+            }
+        }
+
+        // Executed Tools: If 3 or more, wrap in a compact collapsible header
+        if (executedTools.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
-            if (bubble.toolCallsWithResults.size > 2) {
+            if (executedTools.size > 2) {
                 var showToolsList by remember { mutableStateOf(false) }
                 Surface(
                     color = DarkSurfaceVariant,
@@ -1568,7 +1586,7 @@ private fun AgentBubble(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Executed ${bubble.toolCallsWithResults.size} tools (${bubble.toolCallsWithResults.map { it.first.name }.distinct().joinToString(", ")})",
+                                text = "Executed ${executedTools.size} tools (${executedTools.map { it.first.name }.distinct().joinToString(", ")})",
                                 color = TextSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
@@ -1587,22 +1605,72 @@ private fun AgentBubble(
 
                 AnimatedVisibility(visible = showToolsList) {
                     Column(modifier = Modifier.padding(top = 4.dp)) {
-                        bubble.toolCallsWithResults.forEach { (tool, result) ->
+                        executedTools.forEach { (tool, result) ->
                             ToolCallCard(toolCall = tool, result = result)
                         }
                     }
                 }
             } else {
-                bubble.toolCallsWithResults.forEach { (tool, result) ->
+                executedTools.forEach { (tool, result) ->
                     ToolCallCard(toolCall = tool, result = result)
                 }
             }
         }
 
-        // Code Diffs
-        bubble.diffs.forEach { diff ->
+        // Code Diffs / Replace & Overwrite spoiler
+        if (bubble.diffs.isNotEmpty()) {
+            var showDiffsList by remember { mutableStateOf(false) }
             Spacer(modifier = Modifier.height(8.dp))
-            CodeDiffViewer(diff = diff)
+            Surface(
+                color = DarkSurfaceVariant,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showDiffsList = !showDiffsList }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = AppIcons.Edit,
+                            contentDescription = null,
+                            tint = WarningOrange,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        val filesCount = bubble.diffs.size
+                        val fileNames = bubble.diffs.map { it.file.substringAfterLast('/') }.distinct().joinToString(", ")
+                        Text(
+                            text = "Modified $filesCount ${if (filesCount == 1) "file" else "files"} ($fileNames)",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Icon(
+                        imageVector = if (showDiffsList) AppIcons.KeyboardArrowUp else AppIcons.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = showDiffsList) {
+                Column(modifier = Modifier.padding(top = 4.dp)) {
+                    bubble.diffs.forEach { diff ->
+                        CodeDiffViewer(diff = diff)
+                    }
+                }
+            }
         }
 
         // File Attachments (generated images, created files, downloaded files)
@@ -1688,27 +1756,107 @@ private fun AgentBubble(
             }
         }
 
-        // In-progress indicator if turn is actively running
+        // In-progress indicator and live running status if turn is actively running
         if (isTurnRunning) {
             Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 2.dp)
+            Surface(
+                color = DarkSurfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(13.dp),
-                    strokeWidth = 2.dp,
-                    color = AccentGreen
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Агент формирует ответ...",
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    fontStyle = FontStyle.Italic
-                )
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    // Extract active running action text (from liveActivity)
+                    val actionText = remember(liveActivity) {
+                        when {
+                            liveActivity?.activity == "tool_running" -> {
+                                liveActivity.detail.ifBlank { "Running ${liveActivity.toolName ?: "tool"}..." }
+                            }
+                            liveActivity?.activity == "tool_done" -> {
+                                liveActivity.detail.ifBlank { "Done: ${liveActivity.toolName ?: "tool"}" }
+                            }
+                            !liveActivity?.detail.isNullOrBlank() &&
+                            liveActivity?.detail != "Thinking..." &&
+                            liveActivity?.detail != "Working in terminal..." &&
+                            liveActivity?.activity != "idle" -> {
+                                liveActivity.detail
+                            }
+                            !liveActivity?.toolName.isNullOrBlank() -> {
+                                "Running ${liveActivity?.toolName}..."
+                            }
+                            else -> null
+                        }
+                    }
+
+                    // Preserve last active action text so it doesn't flicker/vanish between quick events
+                    var preservedActionText by remember(bubble.stepIndex) { mutableStateOf<String?>(null) }
+                    if (!actionText.isNullOrBlank()) {
+                        preservedActionText = actionText
+                    }
+
+                    val displayAction = actionText ?: preservedActionText
+
+                    // "чуть выше где агент готовит ответ" -> active tool/running status
+                    if (!displayAction.isNullOrBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = AppIcons.Build,
+                                contentDescription = null,
+                                tint = AccentGreen,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = displayAction,
+                                color = AccentGreen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // Where agent prepares the answer: spinner + status + Stop button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(13.dp),
+                                strokeWidth = 2.dp,
+                                color = if (displayAction != null) AccentGreen else PrimaryBlue
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (displayAction != null) "Агент выполняет действие..." else "Агент формирует ответ...",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                fontStyle = FontStyle.Italic
+                            )
+                        }
+
+                        TextButton(
+                            onClick = { viewModel.cancelRun() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(24.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = ErrorRed)
+                        ) {
+                            Icon(AppIcons.Close, contentDescription = "Cancel", modifier = Modifier.size(11.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Stop", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
             }
         }
     }
