@@ -7,10 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.antigravity.client.AntigravityApp
 import com.antigravity.client.audio.AudioPlayer
 import com.antigravity.client.audio.AudioRecordingResult
+import com.antigravity.client.data.local.AttachmentEntity
 import com.antigravity.client.data.local.OutboxEntity
 import com.antigravity.client.domain.model.*
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -69,7 +69,7 @@ class ChatViewModel(
     val inputMessage = MutableStateFlow("")
     val pendingAttachments = MutableStateFlow<List<Attachment>>(emptyList())
 
-    val audioPlayer = AudioPlayer()
+    val audioPlayer = AudioPlayer(app.applicationContext)
 
     val isCancelling = MutableStateFlow(false)
     val errorState = MutableStateFlow<String?>(null)
@@ -237,16 +237,30 @@ class ChatViewModel(
             id = pendingId,
             conversationId = conversationId,
             text = "",
-            attachmentsJson = gson.toJson(listOf(voiceAttachment)),
-            model = selectedModel.value,
-            effort = selectedEffort.value,
-            mode = tokenStore.selectedMode,
+            attachmentIdsJson = gson.toJson(listOf(voiceAttachment.id)),
             state = "PENDING"
+        )
+
+        val attEntity = AttachmentEntity(
+            id = voiceAttachment.id,
+            conversationId = conversationId,
+            messageId = pendingId,
+            type = voiceAttachment.type.name,
+            fileName = voiceAttachment.fileName,
+            mimeType = voiceAttachment.mimeType,
+            size = voiceAttachment.size,
+            duration = voiceAttachment.duration,
+            localUri = voiceAttachment.localUri,
+            remoteUrl = voiceAttachment.remoteUrl,
+            serverId = voiceAttachment.serverId,
+            uploadState = voiceAttachment.uploadState.name,
+            transcription = voiceAttachment.transcription
         )
 
         viewModelScope.launch {
             try {
                 repository.saveOutboxItem(outboxItem)
+                repository.saveAttachment(attEntity)
                 executeSendMessage(pendingId, workspace, "", listOf(voiceAttachment))
             } catch (e: Exception) {
                 repository.updatePendingMessageStatus(conversationId, pendingId, MessageDeliveryStatus.FAILED)
@@ -283,23 +297,37 @@ class ChatViewModel(
             status = MessageDeliveryStatus.SENDING,
             baseStepIndex = currentBaseStep
         )
-        // Add immediately to persistent repository store
         repository.addPendingMessage(conversationId, pendingMsg)
 
         val outboxItem = OutboxEntity(
             id = pendingId,
             conversationId = conversationId,
             text = fullMessage,
-            attachmentsJson = gson.toJson(currentAttachments),
-            model = selectedModel.value,
-            effort = selectedEffort.value,
-            mode = tokenStore.selectedMode,
+            attachmentIdsJson = gson.toJson(currentAttachments.map { it.id }),
             state = "PENDING"
         )
 
         viewModelScope.launch {
             try {
                 repository.saveOutboxItem(outboxItem)
+                currentAttachments.forEach { att ->
+                    val attEntity = AttachmentEntity(
+                        id = att.id,
+                        conversationId = conversationId,
+                        messageId = pendingId,
+                        type = att.type.name,
+                        fileName = att.fileName,
+                        mimeType = att.mimeType,
+                        size = att.size,
+                        duration = att.duration,
+                        localUri = att.localUri,
+                        remoteUrl = att.remoteUrl,
+                        serverId = att.serverId,
+                        uploadState = att.uploadState.name,
+                        transcription = att.transcription
+                    )
+                    repository.saveAttachment(attEntity)
+                }
                 executeSendMessage(pendingId, workspace, fullMessage, currentAttachments)
             } catch (e: Exception) {
                 repository.updatePendingMessageStatus(conversationId, pendingId, MessageDeliveryStatus.FAILED)
@@ -329,11 +357,18 @@ class ChatViewModel(
                         transcription = att.transcription,
                         duration = att.duration
                     )
-                    att.copy(
+                    val updated = att.copy(
                         serverId = resp.id,
                         remoteUrl = resp.storagePath,
                         uploadState = AttachmentUploadState.COMPLETED
                     )
+                    repository.updateAttachmentState(
+                        id = att.id,
+                        state = AttachmentUploadState.COMPLETED.name,
+                        remoteUrl = resp.storagePath,
+                        serverId = resp.id
+                    )
+                    updated
                 } else {
                     att
                 }
@@ -383,14 +418,29 @@ class ChatViewModel(
                 val outboxItems = repository.getPendingOutboxItems().firstOrNull() ?: emptyList()
                 val convItems = outboxItems.filter { it.conversationId == conversationId }
                 for (item in convItems) {
-                    val attachments: List<Attachment> = item.attachmentsJson?.let {
-                        try {
-                            val listType = object : TypeToken<List<Attachment>>() {}.type
-                            gson.fromJson(it, listType) ?: emptyList()
-                        } catch (e: Exception) {
-                            emptyList()
-                        }
-                    } ?: emptyList()
+                    val attEntities = repository.getAttachmentsForMessage(item.id).firstOrNull() ?: emptyList()
+                    val attachments: List<Attachment> = attEntities.map { entity ->
+                        Attachment(
+                            id = entity.id,
+                            conversationId = entity.conversationId,
+                            type = when (entity.type) {
+                                "IMAGE" -> AttachmentType.IMAGE
+                                "VIDEO" -> AttachmentType.VIDEO
+                                "AUDIO" -> AttachmentType.AUDIO
+                                "DOCUMENT" -> AttachmentType.DOCUMENT
+                                else -> AttachmentType.OTHER
+                            },
+                            fileName = entity.fileName,
+                            mimeType = entity.mimeType,
+                            size = entity.size,
+                            duration = entity.duration,
+                            localUri = entity.localUri,
+                            remoteUrl = entity.remoteUrl,
+                            serverId = entity.serverId,
+                            uploadState = try { AttachmentUploadState.valueOf(entity.uploadState) } catch (_: Exception) { AttachmentUploadState.LOCAL },
+                            transcription = entity.transcription
+                        )
+                    }
                     val conv = conversation.value
                     val workspace = conv?.workspace ?: tokenStore.defaultWorkspace
                     try {

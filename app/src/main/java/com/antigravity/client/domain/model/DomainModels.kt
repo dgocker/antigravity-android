@@ -97,8 +97,10 @@ enum class AttachmentType {
 
 enum class AttachmentUploadState {
     LOCAL,
+    PENDING,
     UPLOADING,
     UPLOADED,
+    COMPLETED,
     SENDING,
     SENT,
     FAILED,
@@ -107,6 +109,7 @@ enum class AttachmentUploadState {
 
 data class Attachment(
     val id: String = java.util.UUID.randomUUID().toString(),
+    val conversationId: String? = null,
     val type: AttachmentType,
     val fileName: String,
     val mimeType: String,

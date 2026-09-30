@@ -7,6 +7,9 @@ import com.antigravity.client.domain.model.*
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class ChatRepository(
     private val api: GatewayApi,
@@ -235,14 +238,15 @@ class ChatRepository(
         duration: Int? = null,
         onProgress: (Float) -> Unit = {}
     ): AttachmentUploadResponseDto {
-        val mediaType = okhttp3.MediaType.parse(mimeType)
-        val fileReqBody = okhttp3.RequestBody.create(mediaType, file)
+        val mediaType = mimeType.toMediaTypeOrNull()
+        val fileReqBody = file.asRequestBody(mediaType)
         val countingBody = com.antigravity.client.data.remote.CountingRequestBody(fileReqBody, onProgress)
         val filePart = okhttp3.MultipartBody.Part.createFormData("file", file.name, countingBody)
 
-        val convPart = conversationId?.let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("text/plain"), it) }
-        val transPart = transcription?.let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("text/plain"), it) }
-        val durPart = duration?.let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("text/plain"), it.toString()) }
+        val plainType = "text/plain".toMediaTypeOrNull()
+        val convPart = conversationId?.let { it.toRequestBody(plainType) }
+        val transPart = transcription?.let { it.toRequestBody(plainType) }
+        val durPart = duration?.let { it.toString().toRequestBody(plainType) }
 
         return api.uploadAttachment(
             file = filePart,

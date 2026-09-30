@@ -16,7 +16,7 @@ data class PlaybackState(
     val durationMs: Int = 0
 )
 
-class AudioPlayer(private val context: Context) {
+class AudioPlayer(private val context: Context? = null) {
     private var mediaPlayer: MediaPlayer? = null
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
@@ -46,7 +46,7 @@ class AudioPlayer(private val context: Context) {
                 )
                 if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
                     setDataSource(urlOrPath)
-                } else if (urlOrPath.startsWith("content://")) {
+                } else if (urlOrPath.startsWith("content://") && context != null) {
                     setDataSource(context, Uri.parse(urlOrPath))
                 } else {
                     setDataSource(urlOrPath)
@@ -133,5 +133,10 @@ class AudioPlayer(private val context: Context) {
                 }
             }
         }
+    }
+
+    fun release() {
+        stop()
+        scope.cancel()
     }
 }

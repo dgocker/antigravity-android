@@ -660,6 +660,8 @@ private fun UserBubble(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     when (bubble.status) {
+                        MessageDeliveryStatus.LOCAL,
+                        MessageDeliveryStatus.UPLOADING,
                         MessageDeliveryStatus.SENDING -> {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(10.dp),
