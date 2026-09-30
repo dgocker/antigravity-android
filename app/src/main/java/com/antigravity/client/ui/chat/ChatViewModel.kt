@@ -13,15 +13,17 @@ import com.antigravity.client.data.local.OutboxEntity
 import com.antigravity.client.domain.model.*
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.*
 import com.antigravity.client.data.remote.dto.*
 import java.io.File
 import java.util.UUID
 
 val DEFAULT_SLASH_COMMANDS = listOf(
-    SlashCommandDto("model", "Выбор активной нейросети (Gemini Flash, Pro, Claude и др.)", "Модель", "model_picker", "/model"),
-    SlashCommandDto("tasks", "Просмотр и управление фоновыми процессами и субагентами", "Инструменты", "tasks", "/tasks"),
-    SlashCommandDto("artifact", "Просмотр созданных AI артефактов (планы, отчеты, код)", "Инструменты", "artifacts", "/artifact"),
+    SlashCommandDto("model", "Выбор активной нейросети (Gemini Flash, Pro, Claude и др.)", "Модель", "select_model", "/model"),
+    SlashCommandDto("tasks", "Просмотр и управление фоновыми процессами и субагентами", "Инструменты", "view_tasks", "/tasks"),
+    SlashCommandDto("artifact", "Просмотр созданных AI артефактов (планы, отчеты, код)", "Инструменты", "view_artifacts", "/artifact"),
+    SlashCommandDto("artifacts", "Список всех созданных артефактов текущего диалога", "Инструменты", "view_artifacts", "/artifacts"),
     SlashCommandDto("diff", "Показать текущий git diff (изменения файлов)", "Инструменты", "insert", "/diff"),
     SlashCommandDto("clear", "Очистить историю текущего диалога", "Диалог", "clear", "/clear"),
     SlashCommandDto("title", "Изменить название текущего чата", "Диалог", "insert", "/title "),
@@ -121,6 +123,16 @@ class ChatViewModel(
             } catch (e: Exception) {
                 // ignore
             }
+            try {
+                tasks.value = repository.getTasks(conversationId)
+            } catch (e: Exception) {
+                // ignore
+            }
+            try {
+                artifacts.value = repository.getArtifacts(conversationId)
+            } catch (e: Exception) {
+                // ignore
+            }
         }
     }
 
@@ -198,6 +210,10 @@ class ChatViewModel(
                 // Keep default slash commands
             }
         }
+
+        // Load tasks and artifacts
+        loadTasks()
+        loadArtifacts()
 
         // Load full step history from server
         viewModelScope.launch {

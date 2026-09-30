@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -799,6 +800,93 @@ fun ChatScreen(
                                     viewModel.sendQuestionAnswer(answer)
                                 }
                             )
+                        }
+                    }
+                }
+            }
+
+            // Active Agents & Artifacts indicator bar (matching Antigravity CLI footer)
+            val activeAgentsCount = tasks.subagents.count { it.state.contains("alive", ignoreCase = true) || it.state.contains("run", ignoreCase = true) }
+            val totalAgentsCount = tasks.subagents.size
+            if (totalAgentsCount > 0 || artifacts.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (totalAgentsCount > 0) {
+                        Surface(
+                            color = DarkSurfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.clickable {
+                                viewModel.loadTasks()
+                                showTasksSheet = true
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (activeAgentsCount > 0) AccentGreen else TextMuted)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (activeAgentsCount > 0) "$activeAgentsCount активных агентов" else "$totalAgentsCount агентов",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "/tasks",
+                                    color = PrimaryBlue,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+
+                    if (artifacts.isNotEmpty()) {
+                        Surface(
+                            color = DarkSurfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.clickable {
+                                viewModel.loadArtifacts()
+                                showArtifactsSheet = true
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = PrimaryBlue,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "${artifacts.size} артефактов",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "/artifact",
+                                    color = PrimaryBlue,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
