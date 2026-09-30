@@ -452,9 +452,8 @@ fun ChatScreen(
 
     val lastStep = steps.lastOrNull()
     val isActivityRunning = liveActivity != null && liveActivity?.activity != "idle"
-    val isServerRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true
     val isSending = pendingMessages.any { it.status == MessageDeliveryStatus.SENDING }
-    val isRunning = isActivityRunning || isServerRunning || activeDeltaText.isNotEmpty() || isSending
+    val isRunning = isActivityRunning || activeDeltaText.isNotEmpty() || isSending
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
