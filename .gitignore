@@ -31,3 +31,4 @@ server/gateway.db*
 *.db-wal
 *.db-shm
 .pytest_cache/
+docs/
