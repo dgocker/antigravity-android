@@ -1,43 +1,43 @@
 # Antigravity Server Gateway (`server/`)
 
-Высокопроизводительный асинхронный серверный шлюз (Gateway) на **Python 3.12 (FastAPI / Uvicorn / WebSocket)**, обеспечивающий двустороннюю связь между терминальной сессией **Antigravity CLI (`agy`)** на сервере/VPS и мобильным приложением **Antigravity Android**.
+High-performance asynchronous server gateway built with **Python 3.12 (FastAPI / Uvicorn / WebSockets)**, providing seamless bidirectional communication between the **Antigravity CLI (`agy`)** terminal session on your server/VPS and the **Antigravity Android** mobile client.
 
 ---
 
-## 🌟 Ключевые возможности
+## 🌟 Key Features
 
-1. **Двусторонняя синхронизация терминала и приложения в реальном времени:**
-   * **Terminal → App:** Фоновый `TranscriptWatcher` непрерывно отслеживает `transcript_full.jsonl` активного диалога и транслирует в WebSocket все промежуточные вызовы инструментов, текст рассуждений модели (`thinking`), код изменений и финальные ответы с задержкой менее 80 мс.
-   * **App → Terminal:** При отправке сообщения из мобильного приложения шлюз проверяет наличие интерактивной сессии в `tmux` (`agy`). Если сессия активна, сообщение вставляется прямо в терминал через **Bracketed Paste (`tmux paste-buffer -p`)** без запуска параллельных процессов и разрывов сессий.
-2. **Управление состоянием выполнения и кнопка «Стоп»:**
-   * Детектор `is_tmux_turn_active()` отслеживает активное выполнение в tmux (спиннеры, `esc to cancel`).
-   * В приложении в реальном времени отображается индикатор работы и активная кнопка **«Стоп»**. Нажатие кнопки в приложении посылает `Escape` / `Ctrl+C` в tmux и мгновенно прерывает выполнение агента.
-3. **Надежный журнал событий и догрузка при обрывах связи:**
-   * Встроенная база данных SQLite WAL (`gateway.db`).
-   * Каждому событию присваивается монотонный порядковый номер (`seq`). При обрыве связи мобильное приложение подключается с параметром `?after=<seq>` и моментально получает только пропущенные шаги без дублирования.
-4. **Управление доступом по токенам устройств (Device Tokens):**
-   * Поддержка генерации индивидуальных токенов для каждого телефона/планшета через консольную утилиту `agy-token.py`.
-   * Хранение токенов в базе данных в виде SHA-256 хэшей. Безопасная проверка с защитой от атак по времени (`secrets.compare_digest`).
-5. **Мультимедиа и вложения:**
-   * Загрузка изображений, видео, файлов и аудиосообщений через `POST /v1/attachments`.
-   * Поддержка предпросмотра и скачивания вложений по защищенным ссылкам с проверкой токена.
-6. **Минимальное потребление ресурсов:**
-   * Работает в 1 процессе Uvicorn, потребляет всего **~25–35 МБ RAM** и практически не нагружает процессор в простое.
-
----
-
-## 📋 Системные требования
-
-* **ОС:** Linux (Ubuntu 22.04 / 24.04, Debian 11 / 12 или аналоги).
-* **Python:** 3.10, 3.11 или 3.12 (с установленным пакетом `python3-venv`).
-* **tmux:** Установлен в системе (`apt install -y tmux`).
-* **Antigravity CLI:** Установлен бинарник `agy` (по умолчанию `~/.local/bin/agy`).
+1. **Real-Time Bidirectional Terminal & App Synchronization:**
+   * **Terminal → App:** A background `TranscriptWatcher` continuously tails `transcript_full.jsonl` of the active conversation, streaming tool calls, model thoughts (`thinking`), structured code diffs, and responses over WebSockets with sub-80ms latency.
+   * **App → Terminal:** When sending messages from the mobile client, the gateway checks for an active interactive `tmux` session (`agy`). If active, the prompt is injected directly via **Bracketed Paste (`tmux paste-buffer -p`)** without spawning parallel processes or interrupting existing sessions.
+2. **Execution State Tracking & Live "Stop" Button:**
+   * An active-state inspector (`is_tmux_turn_active()`) monitors tmux spinners and execution status (`Running command...`, `esc to cancel`).
+   * The mobile app displays an animated activity indicator and an active red **Stop** button in real time. Tapping Stop in the app issues `Escape` / `Ctrl+C` into the tmux session, instantly interrupting agent execution.
+3. **Reliable Event Logging & Reconnection Backfill:**
+   * SQLite database in **WAL mode** (`gateway.db`).
+   * Each event receives a monotonically increasing sequence ID (`seq`). On network drops, the mobile client reconnects with `?after=<seq>` to backfill missed steps with guaranteed zero duplication.
+4. **Device Token Authentication:**
+   * Multi-device token management via the `agy-token.py` CLI utility.
+   * Device tokens are stored as SHA-256 hashes in the database with constant-time verification (`secrets.compare_digest`) to protect against timing attacks.
+5. **Rich Media & Attachments:**
+   * Upload images, videos, documents, and voice messages via `POST /v1/attachments`.
+   * Secure file streaming and download endpoints with token authorization.
+6. **Minimal Resource Footprint:**
+   * Single-worker Uvicorn process consuming only **~25–35 MB RAM** with virtually zero idle CPU usage.
 
 ---
 
-## 🚀 Быстрая установка (в 1 команду)
+## 📋 System Requirements
 
-Если вы запускаете установку на сервере под пользователем `root` (или с `sudo`):
+* **Operating System:** Linux (Ubuntu 22.04 / 24.04, Debian 11 / 12, or equivalent).
+* **Python:** 3.10, 3.11, or 3.12 (with `python3-venv` package installed).
+* **tmux:** Installed on the system (`sudo apt install -y tmux`).
+* **Antigravity CLI:** Installed `agy` binary (defaults to `~/.local/bin/agy`).
+
+---
+
+## 🚀 One-Command Automated Installation
+
+If running on your server as `root` (or with `sudo`):
 
 ```bash
 cd server
@@ -45,25 +45,25 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-Скрипт автоматически:
-1. Проверит наличие `python3`, `python3-venv` и `tmux`.
-2. Создаст виртуальное окружение `venv/` и установит зависимости из `requirements.txt`.
-3. Сгенерирует файл конфигурации `.env` со случайным мастер-токеном.
-4. Создаст каталог `/root/agy-uploads` для загружаемых файлов.
-5. Установит, включит в автозагрузку и запустит службу systemd `agy-gateway.service`.
+The script will automatically:
+1. Verify `python3`, `python3-venv`, and `tmux` dependencies.
+2. Create a virtual environment in `venv/` and install packages from `requirements.txt`.
+3. Generate a `.env` configuration file with a secure random master token.
+4. Create the `/root/agy-uploads` directory for uploads.
+5. Install, enable at boot, and start the `agy-gateway.service` systemd daemon.
 
 ---
 
-## 🛠 Пошаговая ручная установка
+## 🛠 Step-by-Step Manual Installation
 
-### Шаг 1. Установка системных зависимостей
+### Step 1. Install System Dependencies
 
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip tmux sqlite3
 ```
 
-### Шаг 2. Создание виртуального окружения и установка пакетов
+### Step 2. Create Virtual Environment & Install Packages
 
 ```bash
 cd server
@@ -72,17 +72,17 @@ venv/bin/pip install --upgrade pip
 venv/bin/pip install -r requirements.txt
 ```
 
-### Шаг 3. Настройка конфигурации `.env`
+### Step 3. Configure `.env`
 
-Скопируйте шаблон конфигурации:
+Copy the environment template:
 ```bash
 cp .env.example .env
 chmod 600 .env
 ```
 
-Отредактируйте `.env` при необходимости:
+Edit `.env` as needed:
 ```ini
-# Сгенерируйте мастер-токен: openssl rand -hex 32
+# Generate a master token: openssl rand -hex 32
 AUTH_TOKEN=example_master_auth_token_placeholder
 
 HOST=127.0.0.1
@@ -90,25 +90,25 @@ PORT=8765
 MAX_CONCURRENT_RUNS=2
 DB_PATH=./gateway.db
 
-# Каталог для вложений и картинок
+# Directory for file and media attachments
 UPLOADS_DIR=/root/agy-uploads
 UPLOAD_MAX_SIZE_BYTES=52428800
 
-# Разрешенные рабочие каталоги для обзора файлов (через запятую)
+# Allowed workspace roots for file browsing (comma-separated)
 ALLOWED_WORKSPACE_ROOTS=/root,/root/agy-uploads
 
-# Путь к бинарнику Antigravity CLI
+# Path to the Antigravity CLI binary
 AGY_BIN=/root/.local/bin/agy
 ```
 
-### Шаг 4. Настройка службы systemd
+### Step 4. Set Up the systemd Service
 
-Скопируйте юнит-файл в системный каталог:
+Copy the service file to the system directory:
 ```bash
 sudo cp agy-gateway.service /etc/systemd/system/agy-gateway.service
 ```
 
-Если путь к репозиторию отличается от `/root/agy-android/server`, отредактируйте пути в `/etc/systemd/system/agy-gateway.service`:
+If your installation directory differs from `/root/agy-android/server`, adjust the paths in `/etc/systemd/system/agy-gateway.service`:
 ```ini
 [Unit]
 Description=Antigravity CLI Gateway
@@ -128,54 +128,60 @@ MemoryMax=400M
 WantedBy=multi-user.target
 ```
 
-Примените изменения и запустите сервис:
+Reload systemd, enable, and start the service:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable agy-gateway
 sudo systemctl start agy-gateway
 ```
 
-Проверьте статус службы:
+Verify service status:
 ```bash
 sudo systemctl status agy-gateway
 ```
 
 ---
 
-## 🔑 Создание токена для Android-приложения
+## 🔑 Provisioning Device Tokens for the Android App
 
-Шлюз поддерживает многопользовательские токены устройств с возможностью отзыва:
+The gateway supports individual, revokable device tokens:
 
-1. **Создать токен для нового устройства:**
+1. **Generate a token for a new device:**
    ```bash
    venv/bin/python3 agy-token.py create "Pixel 8 Pro"
    ```
-   В выводе вы получите токен вида:
-   `agy_android_example_device_token_placeholder`
+   Output:
+   ```text
+   Device: Pixel 8 Pro (ID: 1)
+   Token:
+   agy_android_example_device_token_placeholder
+   Created: 2026-09-30T10:00:00Z
+   NOTE: Store this token in your Android app. The raw token is not stored on the server.
+   ```
 
-2. **Посмотреть список зарегистрированных устройств:**
+2. **List all registered devices:**
    ```bash
    venv/bin/python3 agy-token.py list
    ```
 
-3. **Отозвать токен:**
+3. **Revoke a device token:**
    ```bash
    venv/bin/python3 agy-token.py revoke <ID>
    ```
 
-Полученный токен вставьте в настройках подключения мобильного приложения Android.
+Enter the generated token in the connection settings of your Antigravity Android app.
 
 ---
 
-## 🌐 Настройка Reverse Proxy (Nginx / HTTPS / WebSocket)
+## 🌐 Reverse Proxy Configuration (Nginx / HTTPS / WebSockets)
 
-Шлюз слушает локальный адрес `127.0.0.1:8765`. Для безопасного подключения мобильного клиента через интернет рекомендуется настроить обратный прокси Nginx с поддержкой WebSocket и SSL/TLS:
+The gateway binds locally to `127.0.0.1:8765`. For secure access from your mobile device over the internet, configure an Nginx reverse proxy with WebSocket upgrade support and SSL/TLS:
 
 ```nginx
 server {
     server_name agy.yourdomain.com;
 
-    # SSL сертификаты (Let's Encrypt / Certbot)
+    # SSL certificates (Let's Encrypt / Certbot)
     listen 443 ssl http2;
     ssl_certificate /etc/letsencrypt/live/agy.yourdomain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/agy.yourdomain.com/privkey.pem;
@@ -186,7 +192,7 @@ server {
         proxy_pass http://127.0.0.1:8765;
         proxy_http_version 1.1;
 
-        # Проброс заголовков WebSocket Upgrade
+        # WebSocket Upgrade headers
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
@@ -195,7 +201,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Таймауты для долгоживущих WebSocket-соединений
+        # Timeouts for long-lived WebSocket sessions
         proxy_read_timeout 86400s;
         proxy_send_timeout 86400s;
     }
@@ -204,40 +210,40 @@ server {
 
 ---
 
-## 💻 Интеграция с сессией tmux (Termius / SSH)
+## 💻 tmux Integration (Termius / SSH)
 
-Чтобы сообщения из мобильного приложения залетали в интерактивную сессию терминала, запустите `agy` внутри именованной сессии `tmux` с именем `agy`:
+To route messages from your mobile app into your active terminal workflow, run `agy` inside a named `tmux` session named `agy`:
 
 ```bash
-# Запуск новой сессии agy в tmux
+# Start a new agy session inside tmux
 tmux new-session -s agy agy
 
-# Подключение к существующей сессии
+# Attach to an existing session
 tmux attach-session -t agy
 ```
 
-Когда сессия `agy` запущена в tmux:
-- Любые сообщения из мобильного приложения будут автоматически впечатываться в эту интерактивную сессию.
-- Все команды, вызовы инструментов и размышления агента в терминале будут транслироваться на экран вашего смартфона в режиме реального времени.
+When the `agy` tmux session is running:
+- Any message sent from the Android mobile app is injected directly into this interactive session via bracketed paste.
+- All commands executed, tool outputs, and reasoning steps in the terminal stream directly to your phone screen in real time.
 
 ---
 
-## 🧪 Запуск тестов
+## 🧪 Running Unit Tests
 
-В репозитории есть готовый набор тестов pytest для проверки интеграции tmux, WebSocket и наблюдателя транскрипта:
+The repository includes a pytest test suite covering tmux injection, WebSocket subscription, and transcript watcher logic:
 
 ```bash
 cd server
 PYTHONPATH=. venv/bin/pytest tests -v
 ```
 
-Все тесты должны успешно пройти (`5 passed`).
+All tests should pass (`5 passed`).
 
 ---
 
-## 📊 Мониторинг и логирование
+## 📊 Monitoring & Logs
 
-Просмотр логов работы шлюза в реальном времени:
+View live server logs:
 ```bash
 sudo journalctl -u agy-gateway -f
 ```
