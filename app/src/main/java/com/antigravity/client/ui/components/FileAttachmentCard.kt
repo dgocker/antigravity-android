@@ -105,3 +105,79 @@ fun FileAttachmentCard(
         }
     }
 }
+
+@Composable
+fun ImageAttachmentCard(
+    file: FileAttachment,
+    imageUrl: String,
+    onPreviewImage: (String) -> Unit,
+    onDownload: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = DarkSurfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 180.dp, max = 320.dp)
+                    .background(DarkSurfaceElevated)
+                    .clickable { onPreviewImage(imageUrl) },
+                contentAlignment = Alignment.Center
+            ) {
+                coil.compose.AsyncImage(
+                    model = imageUrl,
+                    contentDescription = file.name,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = file.name,
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (!file.action.isNullOrBlank()) {
+                        Text(
+                            text = file.action,
+                            color = AccentPurple,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDownload,
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = PrimaryBlue.copy(alpha = 0.2f),
+                        contentColor = PrimaryBlue
+                    )
+                ) {
+                    Icon(
+                        imageVector = AppIcons.Download,
+                        contentDescription = "Download image",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+

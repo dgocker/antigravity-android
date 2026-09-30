@@ -50,9 +50,11 @@ sealed class ConversationBubble(val key: String) {
 
     data class Agent(
         val stepIndex: Int,
+        val conversationId: String = "",
         val thinking: String? = null,
         val toolCallsWithResults: List<Pair<ToolCall, String?>> = emptyList(),
         val diffs: List<CodeDiff> = emptyList(),
+        val attachments: List<Attachment> = emptyList(),
         val messageText: String? = null,
         val error: String? = null
     ) : ConversationBubble("agent_$stepIndex")
@@ -96,12 +98,37 @@ fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMe
     val bubbles = mutableListOf<ConversationBubble>()
     var currentAgent: ConversationBubble.Agent? = null
 
+    fun linkAgentTranscriptionToUserBubble(agent: ConversationBubble.Agent) {
+        val agentText = agent.messageText ?: return
+        val transMatch = Regex("""Расшифровка(?: аудио)?:\s*(?:>|\n\s*>|\n)*\s*[«"']?(.*?)[»"']?(?:\n|\r|\(|$)""", RegexOption.IGNORE_CASE).find(agentText)
+        val extractedTrans = transMatch?.groupValues?.get(1)?.trim()
+        if (!extractedTrans.isNullOrBlank()) {
+            val lastUserIdx = bubbles.indexOfLast {
+                it is ConversationBubble.User && it.attachments.any { a -> a.type == AttachmentType.AUDIO && a.transcription.isNullOrBlank() }
+            }
+            if (lastUserIdx != -1) {
+                val userBubble = bubbles[lastUserIdx] as ConversationBubble.User
+                val updatedAttachments = userBubble.attachments.map { a ->
+                    if (a.type == AttachmentType.AUDIO && a.transcription.isNullOrBlank()) {
+                        a.copy(transcription = extractedTrans)
+                    } else {
+                        a
+                    }
+                }
+                bubbles[lastUserIdx] = userBubble.copy(attachments = updatedAttachments)
+            }
+        }
+    }
+
     for (step in steps) {
         val rawContent = step.content?.trim() ?: ""
 
         // 1. User Message
         if (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
-            currentAgent?.let { bubbles.add(it) }
+            currentAgent?.let {
+                linkAgentTranscriptionToUserBubble(it)
+                bubbles.add(it)
+            }
             currentAgent = null
 
             val rawUserText = step.userPrompt ?: step.content ?: ""
@@ -168,26 +195,30 @@ fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMe
         // If after cleaning system noise there is no content and no tools/diffs/thinking, skip it
         val newTools = step.toolCalls.map { it to (null as String?) }
         val newDiffs = step.diffs
+        val newAttachments = step.attachments
         val newThinking = step.thinking.takeIf { !it.isNullOrBlank() }
         val newError = step.error.takeIf { !it.isNullOrBlank() }
         val newText = cleanedContent.takeIf { it.isNotBlank() }
 
-        if (newTools.isEmpty() && newDiffs.isEmpty() && newThinking == null && newText == null && newError == null) {
+        if (newTools.isEmpty() && newDiffs.isEmpty() && newThinking == null && newText == null && newError == null && newAttachments.isEmpty()) {
             continue
         }
 
         if (currentAgent == null) {
             currentAgent = ConversationBubble.Agent(
                 stepIndex = step.stepIndex,
+                conversationId = step.conversationId,
                 thinking = newThinking,
                 toolCallsWithResults = newTools,
                 diffs = newDiffs,
+                attachments = newAttachments,
                 messageText = newText,
                 error = newError
             )
         } else {
             val combinedTools = currentAgent.toolCallsWithResults + newTools
             val combinedDiffs = currentAgent.diffs + newDiffs
+            val combinedAttachments = currentAgent.attachments + newAttachments
             val combinedThinking = if (currentAgent.thinking.isNullOrBlank()) newThinking else currentAgent.thinking
             val combinedError = if (currentAgent.error.isNullOrBlank()) newError else currentAgent.error
             val combinedText = when {
@@ -199,13 +230,17 @@ fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMe
                 thinking = combinedThinking,
                 toolCallsWithResults = combinedTools,
                 diffs = combinedDiffs,
+                attachments = combinedAttachments,
                 messageText = combinedText,
                 error = combinedError
             )
         }
     }
 
-    currentAgent?.let { bubbles.add(it) }
+    currentAgent?.let {
+        linkAgentTranscriptionToUserBubble(it)
+        bubbles.add(it)
+    }
     return bubbles
 }
 
@@ -789,7 +824,7 @@ fun extractAttachmentsFromBubble(bubble: ConversationBubble.Agent): List<FileAtt
 
     fun add(path: String?, action: String?) {
         if (path.isNullOrBlank()) return
-        val clean = path.removePrefix("file://").trim()
+        val clean = path.removePrefix("file://").trim().trimEnd('.', ',', ';')
         if (clean in seen || clean.length < 3) return
         seen.add(clean)
         val name = clean.substringAfterLast('/')
@@ -799,15 +834,27 @@ fun extractAttachmentsFromBubble(bubble: ConversationBubble.Agent): List<FileAtt
         list.add(FileAttachment(name = name, path = clean, isImage = isImg, action = action))
     }
 
-    bubble.toolCallsWithResults.forEach { (tool, _) ->
+    bubble.attachments.forEach { att ->
+        val p = att.localUri ?: att.remoteUrl
+        if (!p.isNullOrBlank()) {
+            add(p, if (att.type == AttachmentType.IMAGE) "Generated Image" else "Attachment")
+        }
+    }
+
+    bubble.toolCallsWithResults.forEach { (tool, result) ->
         when (tool.name) {
             "generate_image" -> {
-                val img = (tool.args["ImageName"] as? String) ?: "generated_image.png"
-                add(img, "Generated Image")
+                val savedAtMatch = Regex("""(?:Generated image is saved at|Image saved to|saved at|saved to)\s+([^\s\n\r]+)""", RegexOption.IGNORE_CASE).find(result ?: "")
+                val savedPath = savedAtMatch?.groupValues?.get(1)?.trim()?.trimEnd('.', ',', ';')
+                val imgPath = savedPath ?: (tool.args["ImageName"] as? String)?.let { name ->
+                    val clean = name.trim().trim('"', '\'')
+                    if (clean.startsWith("/")) clean else "/root/.gemini/antigravity-cli/brain/${bubble.conversationId}/$clean.jpg"
+                } ?: "generated_image.png"
+                add(imgPath, "Generated Image")
             }
             "view_file" -> {
                 val p = tool.args["AbsolutePath"] as? String
-                if (p != null && (p.endsWith(".png", true) || p.endsWith(".jpg", true) || p.endsWith(".pdf", true) || p.endsWith(".apk", true) || p.endsWith(".mp4", true))) {
+                if (p != null && (p.endsWith(".png", true) || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".webp", true) || p.endsWith(".pdf", true) || p.endsWith(".apk", true) || p.endsWith(".mp4", true))) {
                     add(p, "Viewed File")
                 }
             }
@@ -986,13 +1033,21 @@ private fun AgentBubble(
         val attachments = remember(bubble) { extractAttachmentsFromBubble(bubble) }
         if (attachments.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 attachments.forEach { file ->
-                    FileAttachmentCard(
-                        file = file,
-                        onDownload = { viewModel.downloadFile(context, file.path, file.name) },
-                        onClick = if (file.isImage) { { onPreviewImage(viewModel.getFileRawUrl(file.path)) } } else null
-                    )
+                    if (file.isImage) {
+                        ImageAttachmentCard(
+                            file = file,
+                            imageUrl = viewModel.getFileRawUrl(file.path),
+                            onPreviewImage = onPreviewImage,
+                            onDownload = { viewModel.downloadFile(context, file.path, file.name) }
+                        )
+                    } else {
+                        FileAttachmentCard(
+                            file = file,
+                            onDownload = { viewModel.downloadFile(context, file.path, file.name) }
+                        )
+                    }
                 }
             }
         }
