@@ -490,7 +490,7 @@ class ChatRepository(
 
     suspend fun getFileContent(path: String): String = withContext(Dispatchers.IO) {
         try {
-            api.getFileContent(path).content
+            api.getFileContent(path).content ?: ""
         } catch (e: Exception) {
             "Не удалось загрузить содержимое файла: ${e.message}"
         }
