@@ -864,7 +864,7 @@ fun ChatScreen(
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.clickable {
                                 viewModel.loadTasks()
-                                showTasksSheet = true
+                                viewModel.showTasksSheet.value = true
                             }
                         ) {
                             Row(
@@ -901,7 +901,7 @@ fun ChatScreen(
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.clickable {
                                 viewModel.loadArtifacts()
-                                showArtifactsSheet = true
+                                viewModel.showArtifactsSheet.value = true
                             }
                         ) {
                             Row(
@@ -1041,7 +1041,7 @@ fun ChatScreen(
 
     if (showRenameDialog) {
         RenameChatDialog(
-            currentTitle = conversation?.title ?: "",
+            initialTitle = conversation?.title ?: "",
             onConfirm = { newTitle ->
                 viewModel.renameChat(newTitle)
                 viewModel.showRenameDialog.value = false
