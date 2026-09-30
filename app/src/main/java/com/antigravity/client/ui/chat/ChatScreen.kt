@@ -69,6 +69,28 @@ fun cleanTextFromSystemNoise(rawText: String): String {
     return text.trim()
 }
 
+fun cleanUserPromptText(rawText: String?): String {
+    if (rawText.isNullOrBlank()) return ""
+    var text = rawText
+    // Extract <USER_REQUEST> ... </USER_REQUEST> if wrapped
+    val userReqMatch = Regex("""<USER_REQUEST>([\s\S]*?)</USER_REQUEST>""", RegexOption.IGNORE_CASE).find(text)
+    if (userReqMatch != null) {
+        text = userReqMatch.groupValues[1].trim()
+    }
+    // Remove <ADDITIONAL_METADATA> ... </ADDITIONAL_METADATA>
+    text = text.replace(Regex("""<ADDITIONAL_METADATA>[\s\S]*?</ADDITIONAL_METADATA>""", RegexOption.IGNORE_CASE), "")
+    // Remove attachment tags
+    text = text.replace(Regex("""\[Голосовое сообщение:[^\]]+\]""", RegexOption.IGNORE_CASE), "")
+    text = text.replace(Regex("""Расшифровка аудио:\s*"[^"]*"""", RegexOption.IGNORE_CASE), "")
+    text = text.replace(Regex("""\[Изображение:[^\]]+\]""", RegexOption.IGNORE_CASE), "")
+    text = text.replace(Regex("""\[Видео:[^\]]+\]""", RegexOption.IGNORE_CASE), "")
+    text = text.replace(Regex("""\[Вложение:[^\]]+\]""", RegexOption.IGNORE_CASE), "")
+    // Remove residual XML tags
+    text = text.replace(Regex("""</?USER_REQUEST>""", RegexOption.IGNORE_CASE), "")
+    text = text.replace(Regex("""</?ADDITIONAL_METADATA>""", RegexOption.IGNORE_CASE), "")
+    return text.trim()
+}
+
 fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
     val bubbles = mutableListOf<ConversationBubble>()
     var currentAgent: ConversationBubble.Agent? = null
@@ -81,7 +103,8 @@ fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
             currentAgent?.let { bubbles.add(it) }
             currentAgent = null
 
-            val userText = step.userPrompt ?: step.content ?: ""
+            val rawUserText = step.userPrompt ?: step.content ?: ""
+            val userText = cleanUserPromptText(rawUserText)
             if (userText.isNotBlank() || step.attachments.isNotEmpty()) {
                 bubbles.add(
                     ConversationBubble.User(
@@ -270,14 +293,17 @@ fun ChatScreen(
     val allBubbles = remember(steps, pendingMessages) {
         val list = processStepsToBubbles(steps).toMutableList()
         for (pending in pendingMessages) {
-            list.add(
-                ConversationBubble.User(
-                    id = pending.id,
-                    text = pending.text,
-                    attachments = pending.attachments,
-                    status = pending.status
+            val userText = cleanUserPromptText(pending.text)
+            if (userText.isNotBlank() || pending.attachments.isNotEmpty()) {
+                list.add(
+                    ConversationBubble.User(
+                        id = pending.id,
+                        text = userText,
+                        attachments = pending.attachments,
+                        status = pending.status
+                    )
                 )
-            )
+            }
         }
         list
     }

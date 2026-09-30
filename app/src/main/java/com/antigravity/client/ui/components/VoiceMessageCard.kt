@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
 import com.antigravity.client.audio.AudioPlayer
 import com.antigravity.client.domain.model.Attachment
 import com.antigravity.client.ui.theme.*
@@ -74,7 +75,7 @@ fun VoiceMessageCard(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(PrimaryBlue)
+                    .background(if (isUser) Color.White else PrimaryBlue)
                     .clickable {
                         if (mediaUrl.isNotEmpty()) {
                             audioPlayer.play(mediaUrl)
@@ -85,7 +86,7 @@ fun VoiceMessageCard(
                 Icon(
                     imageVector = if (isPlaying) AppIcons.Pause else AppIcons.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = TextPrimary,
+                    tint = if (isUser) PrimaryBlue else Color.White,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -105,9 +106,9 @@ fun VoiceMessageCard(
                         .fillMaxWidth()
                         .height(24.dp),
                     colors = SliderDefaults.colors(
-                        thumbColor = PrimaryBlue,
-                        activeTrackColor = PrimaryBlue,
-                        inactiveTrackColor = DarkSurfaceVariant
+                        thumbColor = if (isUser) Color.White else PrimaryBlue,
+                        activeTrackColor = if (isUser) Color.White else PrimaryBlue,
+                        inactiveTrackColor = if (isUser) Color.White.copy(alpha = 0.35f) else DarkSurfaceVariant
                     )
                 )
 
@@ -117,12 +118,12 @@ fun VoiceMessageCard(
                 ) {
                     Text(
                         text = if (isPlaying) "Воспроизведение..." else "Голосовое сообщение",
-                        color = TextMuted,
+                        color = if (isUser) Color.White.copy(alpha = 0.85f) else TextMuted,
                         fontSize = 11.sp
                     )
                     Text(
                         text = durationText,
-                        color = TextSecondary,
+                        color = if (isUser) Color.White else TextSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -133,7 +134,10 @@ fun VoiceMessageCard(
         // Transcription section (only shown if transcription exists)
         if (!attachment.transcription.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(6.dp))
-            HorizontalDivider(color = DarkSurfaceVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
+            HorizontalDivider(
+                color = if (isUser) Color.White.copy(alpha = 0.25f) else DarkSurfaceVariant.copy(alpha = 0.5f),
+                thickness = 0.5.dp
+            )
             Spacer(modifier = Modifier.height(4.dp))
 
             Row(
@@ -146,13 +150,13 @@ fun VoiceMessageCard(
                 Icon(
                     imageVector = if (expandedTranscription) AppIcons.KeyboardArrowUp else AppIcons.KeyboardArrowDown,
                     contentDescription = "Toggle transcription",
-                    tint = TextSecondary,
+                    tint = if (isUser) Color.White.copy(alpha = 0.9f) else TextSecondary,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "Расшифровка",
-                    color = TextSecondary,
+                    color = if (isUser) Color.White.copy(alpha = 0.9f) else TextSecondary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
