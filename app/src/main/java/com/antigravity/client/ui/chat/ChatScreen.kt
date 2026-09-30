@@ -91,7 +91,7 @@ fun cleanUserPromptText(rawText: String?): String {
     return text.trim()
 }
 
-fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
+fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMessage> = emptyList()): List<ConversationBubble> {
     val bubbles = mutableListOf<ConversationBubble>()
     var currentAgent: ConversationBubble.Agent? = null
 
@@ -106,11 +106,30 @@ fun processStepsToBubbles(steps: List<Step>): List<ConversationBubble> {
             val rawUserText = step.userPrompt ?: step.content ?: ""
             val userText = cleanUserPromptText(rawUserText)
             if (userText.isNotBlank() || step.attachments.isNotEmpty()) {
+                val matchedPending = pendingMessages.find { pending ->
+                    if (pending.attachments.isNotEmpty() && step.attachments.isNotEmpty()) {
+                        step.attachments.any { sa ->
+                            pending.attachments.any { pa ->
+                                sa.id == pa.id ||
+                                (pa.serverId != null && (pa.serverId == sa.id || pa.serverId == sa.remoteUrl)) ||
+                                (sa.remoteUrl != null && (sa.remoteUrl == pa.remoteUrl || sa.remoteUrl == pa.localUri)) ||
+                                (sa.fileName == pa.fileName && (pa.size == 0L || sa.size == 0L || sa.size == pa.size))
+                            }
+                        }
+                    } else if (userText.isNotBlank() && pending.text.isNotBlank()) {
+                        cleanUserPromptText(pending.text) == userText
+                    } else {
+                        false
+                    }
+                }
+
+                val bubbleId = matchedPending?.id ?: "${step.conversationId}_${step.stepIndex}"
+
                 bubbles.add(
                     ConversationBubble.User(
-                        id = "${step.conversationId}_${step.stepIndex}",
+                        id = bubbleId,
                         text = userText,
-                        attachments = step.attachments,
+                        attachments = if (step.attachments.isNotEmpty()) step.attachments else (matchedPending?.attachments ?: emptyList()),
                         status = MessageDeliveryStatus.DELIVERED
                     )
                 )
@@ -283,26 +302,32 @@ fun ChatScreen(
     }
 
     val lastStep = steps.lastOrNull()
-    val isLastStepDone = lastStep?.type == "PLANNER_RESPONSE" && lastStep.status == "DONE"
     val isActivityRunning = liveActivity != null && liveActivity?.activity != "idle"
-    val isRunning = isActivityRunning || (!isLastStepDone && (conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty()))
-    val isLiveTurnVisible = isRunning || activeDeltaText.isNotEmpty() || isActivityRunning
+    val isServerRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true
+    val hasDelta = activeDeltaText.isNotEmpty()
+    val isSending = pendingMessages.any { it.status == MessageDeliveryStatus.SENDING }
+    val isRunning = isActivityRunning || isServerRunning || hasDelta || isSending
+    val isLiveTurnVisible = isActivityRunning || hasDelta || isServerRunning
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
-    // Combine confirmed steps with optimistic pending messages (instant appearance!)
+    // Combine confirmed steps with optimistic pending messages (instant appearance with stable keys!)
     val allBubbles = remember(steps, pendingMessages) {
-        val list = processStepsToBubbles(steps).toMutableList()
+        val list = processStepsToBubbles(steps, pendingMessages).toMutableList()
+        val processedIds = list.filterIsInstance<ConversationBubble.User>().map { it.id }.toSet()
         for (pending in pendingMessages) {
-            val userText = cleanUserPromptText(pending.text)
-            if (userText.isNotBlank() || pending.attachments.isNotEmpty()) {
-                list.add(
-                    ConversationBubble.User(
-                        id = pending.id,
-                        text = userText,
-                        attachments = pending.attachments,
-                        status = pending.status
+            if (pending.id !in processedIds) {
+                val userText = cleanUserPromptText(pending.text)
+                if (userText.isNotBlank() || pending.attachments.isNotEmpty()) {
+                    list.add(
+                        ConversationBubble.User(
+                            id = pending.id,
+                            text = userText,
+                            attachments = pending.attachments,
+                            status = pending.status
+                        )
                     )
-                )
+                }
             }
         }
         list
@@ -322,19 +347,21 @@ fun ChatScreen(
 
     val hasEarlier = allBubbles.size > visibleLimit
     val totalItems = (if (hasEarlier) 1 else 0) + displayedBubbles.size + (if (isLiveTurnVisible) 1 else 0)
+    var previousTotalItems by remember { mutableIntStateOf(totalItems) }
 
-    // Instant jump to bottom on initial load, smart auto-scroll on new incoming messages
+    // Instant jump to bottom on initial load, smooth auto-scroll ONLY when new items arrive and user is at bottom
     LaunchedEffect(totalItems) {
         if (totalItems > 0) {
             if (!isInitialScrollDone) {
                 listState.scrollToItem(totalItems - 1)
                 isInitialScrollDone = true
-            } else {
+            } else if (totalItems > previousTotalItems) {
                 val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                if (lastVisible >= totalItems - 4) {
-                    listState.animateScrollToItem(totalItems - 1)
+                if (lastVisible >= previousTotalItems - 2) {
+                    listState.scrollToItem(totalItems - 1)
                 }
             }
+            previousTotalItems = totalItems
         }
     }
 
@@ -558,8 +585,22 @@ fun ChatScreen(
                 onTextChange = { viewModel.inputMessage.value = it },
                 attachments = pendingAttachments,
                 onRemoveAttachment = { viewModel.removePendingAttachment(it) },
-                onSend = { viewModel.sendMessage() },
-                onVoiceRecorded = { viewModel.attachVoiceNote(it) },
+                onSend = {
+                    viewModel.sendMessage()
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(60)
+                        val count = listState.layoutInfo.totalItemsCount
+                        if (count > 0) listState.scrollToItem(count - 1)
+                    }
+                },
+                onVoiceRecorded = {
+                    viewModel.attachVoiceNote(it)
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(60)
+                        val count = listState.layoutInfo.totalItemsCount
+                        if (count > 0) listState.scrollToItem(count - 1)
+                    }
+                },
                 onPickCamera = { launchCamera() },
                 onPickGallery = { galleryLauncher.launch("image/*") },
                 onPickFile = { fileLauncher.launch(arrayOf("*/*")) },

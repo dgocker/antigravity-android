@@ -1,9 +1,9 @@
 package com.antigravity.client.sync
 
 import com.antigravity.client.data.local.*
-import com.antigravity.client.domain.model.ConnectionStatus
-import com.antigravity.client.domain.model.LiveActivity
+import com.antigravity.client.domain.model.*
 import com.antigravity.client.security.TokenStore
+import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,6 +20,7 @@ class SyncEngine(
     private val okHttpClient: OkHttpClient,
     var onSyncRequired: (suspend (String) -> Unit)? = null
 ) {
+    private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val eventDao = database.eventDao()
     private val stepDao = database.stepDao()
@@ -130,6 +131,41 @@ class SyncEngine(
                 val payloadObj = json.optJSONObject("payload")
                 if (payloadObj != null) {
                     val stepIndex = payloadObj.optInt("step_index", 0)
+                    val attsArray = payloadObj.optJSONArray("attachments")
+                    val attachmentsJsonStr = if (attsArray != null && attsArray.length() > 0) {
+                        val list = mutableListOf<Attachment>()
+                        for (i in 0 until attsArray.length()) {
+                            val aObj = attsArray.optJSONObject(i) ?: continue
+                            val aid = aObj.optString("id")
+                            val atypeStr = aObj.optString("type", "other")
+                            val atype = when (atypeStr.lowercase()) {
+                                "image" -> AttachmentType.IMAGE
+                                "video" -> AttachmentType.VIDEO
+                                "audio" -> AttachmentType.AUDIO
+                                "document" -> AttachmentType.DOCUMENT
+                                else -> AttachmentType.OTHER
+                            }
+                            list.add(
+                                Attachment(
+                                    id = aid,
+                                    conversationId = conversationId,
+                                    type = atype,
+                                    fileName = aObj.optString("file_name", aid.substringAfterLast('/')),
+                                    mimeType = aObj.optString("mime_type", "application/octet-stream"),
+                                    size = aObj.optLong("size", 0L),
+                                    duration = if (aObj.has("duration") && !aObj.isNull("duration")) aObj.optInt("duration") else null,
+                                    remoteUrl = aObj.optString("server_path").takeIf { it.isNotBlank() },
+                                    serverId = aid,
+                                    transcription = aObj.optString("transcription").takeIf { it.isNotBlank() && it != "null" },
+                                    uploadState = AttachmentUploadState.COMPLETED
+                                )
+                            )
+                        }
+                        gson.toJson(list)
+                    } else {
+                        null
+                    }
+
                     val step = StepEntity(
                         conversationId = conversationId,
                         runId = runId,
@@ -143,6 +179,7 @@ class SyncEngine(
                         userPrompt = payloadObj.optString("user_prompt").takeIf { it.isNotBlank() && it != "null" },
                         toolCallsJson = payloadObj.optJSONArray("tool_calls")?.toString(),
                         diffsJson = payloadObj.optJSONArray("diffs")?.toString(),
+                        attachmentsJson = attachmentsJsonStr,
                         error = payloadObj.optString("error").takeIf { it.isNotBlank() && it != "null" }
                     )
                     stepDao.insertOrUpdate(step)
