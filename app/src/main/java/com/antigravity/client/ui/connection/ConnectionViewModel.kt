@@ -24,6 +24,7 @@ class ConnectionViewModel @JvmOverloads constructor(
     val serverUrl = MutableStateFlow(tokenStore.serverUrl)
     val token = MutableStateFlow(tokenStore.getToken() ?: "")
     val deviceName = MutableStateFlow(tokenStore.deviceName)
+    val trustSelfSigned = MutableStateFlow(tokenStore.trustSelfSigned)
 
     private val _uiState = MutableStateFlow<ConnectionUiState>(ConnectionUiState.Idle)
     val uiState: StateFlow<ConnectionUiState> = _uiState.asStateFlow()
@@ -50,9 +51,11 @@ class ConnectionViewModel @JvmOverloads constructor(
                 tokenStore.serverUrl = url
                 tokenStore.saveToken(rawToken)
                 tokenStore.deviceName = name
+                tokenStore.trustSelfSigned = trustSelfSigned.value
 
-                // Re-initialize network client
-                val testApi = app.networkClient.getApi()
+                // Re-initialize network client with new settings & SSL configuration
+                val client = app.recreateNetworkClient()
+                val testApi = client.getApi()
                 val health = testApi.getHealth()
 
                 if (health.status == "ok" || health.status == "healthy") {
@@ -71,7 +74,18 @@ class ConnectionViewModel @JvmOverloads constructor(
                 }
                 _uiState.value = ConnectionUiState.Error(errorMsg)
             } catch (e: Exception) {
-                _uiState.value = ConnectionUiState.Error("Connection error: ${e.localizedMessage ?: e.message}")
+                val msg = e.localizedMessage ?: e.message ?: "Unknown error"
+                val helpfulMsg = when {
+                    msg.contains("Trust anchor", ignoreCase = true) ||
+                    msg.contains("CertPathValidatorException", ignoreCase = true) ||
+                    msg.contains("SSLPeerUnverifiedException", ignoreCase = true) ||
+                    (msg.contains("Hostname", ignoreCase = true) && msg.contains("not verified", ignoreCase = true)) ->
+                        "SSL certificate verification failed. If using self-signed cert or raw IP, enable 'Trust self-signed SSL'."
+                    msg.contains("CLEARTEXT", ignoreCase = true) ->
+                        "Cleartext HTTP is not permitted. Use https:// or verify network security configuration."
+                    else -> "Connection error: $msg"
+                }
+                _uiState.value = ConnectionUiState.Error(helpfulMsg)
             }
         }
     }

@@ -29,6 +29,13 @@ class SettingsViewModel @JvmOverloads constructor(
 
     val newGeneratedToken = MutableStateFlow<String?>(null)
     val errorMessage = MutableStateFlow<String?>(null)
+    val trustSelfSigned = MutableStateFlow(tokenStore.trustSelfSigned)
+
+    fun toggleTrustSelfSigned(trust: Boolean) {
+        tokenStore.trustSelfSigned = trust
+        trustSelfSigned.value = trust
+        app.restartSyncEngine()
+    }
 
     init {
         loadDeviceTokens()

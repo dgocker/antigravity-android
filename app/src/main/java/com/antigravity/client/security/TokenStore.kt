@@ -21,6 +21,7 @@ class TokenStore(
         private const val KEY_SELECTED_MODE = "selected_mode"
         private const val KEY_LAST_SEQ = "last_received_seq"
         private const val KEY_DEFAULT_WORKSPACE = "default_workspace"
+        private const val KEY_TRUST_SELF_SIGNED = "trust_self_signed"
 
         const val DEFAULT_SERVER_URL = "http://127.0.0.1:8765"
         const val DEFAULT_WORKSPACE = "/root/agy-workspaces"
@@ -85,4 +86,8 @@ class TokenStore(
     var lastReceivedSeq: Long
         get() = prefs.getLong(KEY_LAST_SEQ, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_SEQ, value).apply()
+
+    var trustSelfSigned: Boolean
+        get() = prefs.getBoolean(KEY_TRUST_SELF_SIGNED, false)
+        set(value) = prefs.edit().putBoolean(KEY_TRUST_SELF_SIGNED, value).apply()
 }

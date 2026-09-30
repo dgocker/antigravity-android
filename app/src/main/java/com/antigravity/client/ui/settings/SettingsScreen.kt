@@ -37,6 +37,7 @@ fun SettingsScreen(
     val deviceTokens by viewModel.deviceTokens.collectAsStateWithLifecycle()
     val newGeneratedToken by viewModel.newGeneratedToken.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val trustSelfSigned by viewModel.trustSelfSigned.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var showCreateTokenDialog by remember { mutableStateOf(false) }
@@ -102,6 +103,33 @@ fun SettingsScreen(
                     val raw = viewModel.tokenStore.getToken() ?: ""
                     val masked = if (raw.length > 8) raw.take(4) + "••••••••" + raw.takeLast(4) else "••••••••"
                     Text(text = masked, color = TextMuted, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = DarkSurfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Trust Self-Signed SSL", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                if (trustSelfSigned) "Accepting self-signed & IP certificates" else "Strict CA verification (Standard)",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Switch(
+                            checked = trustSelfSigned,
+                            onCheckedChange = { viewModel.toggleTrustSelfSigned(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = TextPrimary,
+                                checkedTrackColor = PrimaryBlue,
+                                uncheckedThumbColor = TextSecondary,
+                                uncheckedTrackColor = DarkSurfaceVariant
+                            )
+                        )
+                    }
                 }
             }
 

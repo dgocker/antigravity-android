@@ -1,6 +1,7 @@
 package com.antigravity.client.sync
 
 import android.util.Log
+import com.antigravity.client.data.remote.NetworkClient
 import com.antigravity.client.domain.model.ConnectionStatus
 import com.antigravity.client.security.TokenStore
 import kotlinx.coroutines.*
@@ -81,9 +82,9 @@ class WebSocketManager(
         _connectionState.value = ConnectionStatus.CONNECTING
         val lastSeq = tokenStore.lastReceivedSeq
 
-        var base = tokenStore.serverUrl.trim()
+        val base = NetworkClient.normalizeBaseUrl(tokenStore.serverUrl)
         val wsScheme = if (base.startsWith("https://", ignoreCase = true)) "wss://" else "ws://"
-        val hostPart = base.replace(Regex("^https?://", RegexOption.IGNORE_CASE), "").trimEnd('/')
+        val hostPart = base.substringAfter("://").trimEnd('/')
         val convParam = if (!activeConversationId.isNullOrBlank()) "&conversation_id=$activeConversationId" else ""
         val wsUrl = "$wsScheme$hostPart/v1/ws?token=$token&after=$lastSeq$convParam"
 

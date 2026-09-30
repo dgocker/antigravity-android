@@ -5,6 +5,7 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.antigravity.client.AntigravityApp
+import com.antigravity.client.data.remote.NetworkClient
 import com.antigravity.client.audio.AudioPlayer
 import com.antigravity.client.audio.AudioRecordingResult
 import com.antigravity.client.data.local.AttachmentEntity
@@ -504,10 +505,7 @@ class ChatViewModel(
 
     fun getFileRawUrl(filePath: String): String {
         val token = tokenStore.getToken() ?: ""
-        var baseUrl = tokenStore.serverUrl.trim().trimEnd('/')
-        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
-            baseUrl = "http://$baseUrl"
-        }
+        val baseUrl = NetworkClient.normalizeBaseUrl(tokenStore.serverUrl)
         val cleanPath = filePath.removePrefix("file://")
         val encodedPath = java.net.URLEncoder.encode(cleanPath, "UTF-8")
         return "$baseUrl/v1/files/raw?path=$encodedPath&token=$token"
@@ -519,10 +517,7 @@ class ChatViewModel(
             android.widget.Toast.makeText(context, "Authentication token missing", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        var baseUrl = tokenStore.serverUrl.trim().trimEnd('/')
-        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
-            baseUrl = "http://$baseUrl"
-        }
+        val baseUrl = NetworkClient.normalizeBaseUrl(tokenStore.serverUrl)
 
         val downloadUrl: String
         val resolvedFileName: String

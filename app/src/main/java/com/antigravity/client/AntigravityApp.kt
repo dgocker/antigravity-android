@@ -2,6 +2,8 @@ package com.antigravity.client
 
 import android.app.Application
 import android.util.Log
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.antigravity.client.data.local.AppDatabase
 import com.antigravity.client.data.remote.NetworkClient
 import com.antigravity.client.data.repository.ChatRepository
@@ -9,7 +11,7 @@ import com.antigravity.client.data.repository.FileRepository
 import com.antigravity.client.security.TokenStore
 import com.antigravity.client.sync.SyncEngine
 
-class AntigravityApp : Application() {
+class AntigravityApp : Application(), ImageLoaderFactory {
 
     lateinit var tokenStore: TokenStore
         private set
@@ -54,6 +56,18 @@ class AntigravityApp : Application() {
         } catch (e: Throwable) {
             Log.e("AntigravityApp", "Error during app initialization: ${e.message}", e)
         }
+    }
+
+    override fun newImageLoader(): ImageLoader {
+        return ImageLoader.Builder(this)
+            .okHttpClient { networkClient.okHttpClient }
+            .crossfade(true)
+            .build()
+    }
+
+    fun recreateNetworkClient(): NetworkClient {
+        networkClient = NetworkClient(tokenStore)
+        return networkClient
     }
 
     fun restartSyncEngine() {
