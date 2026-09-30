@@ -471,7 +471,7 @@ fun ChatScreen(
     val hasFinalizedAgentText = !lastAgentBubble?.messageText.isNullOrBlank()
 
     // Smooth streaming: preserve delta text until the finalized bubble actually renders its text
-    var preservedDeltaText by remember(conversation?.conversationId) { mutableStateOf("") }
+    var preservedDeltaText by remember(conversation?.id) { mutableStateOf("") }
     if (activeDeltaText.isNotEmpty()) {
         preservedDeltaText = activeDeltaText
     } else if (hasFinalizedAgentText) {
