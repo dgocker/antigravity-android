@@ -14,10 +14,16 @@ A native, high-performance, offline-first Android control panel and IDE-like cli
 ## 🌟 Key Features
 
 - **Offline-First Resilience**: Antigravity runs continuously on the server regardless of phone connectivity. If connectivity drops or the app is killed, reconnection automatically replays all missed events via `after=<lastReceivedSeq>` with guaranteed zero duplicates.
-- **Rich Agent Steps**: Displays user queries, agent planning responses, collapsible tool calls with formatted parameters/results, and syntax-colored structured code diffs.
+- **Voice Notes & Instant Transcription**: Record and send voice messages directly from the composer. Audio is transcribed seamlessly with instant UI updates and integrated player with duration tracking.
+- **In-Bubble Live Tool Status**: Real-time status (`Running run_command...`, `Done: ...`, etc.) is embedded directly inside the active agent response bubble above the progress indicator, eliminating distracting jumping cards.
+- **Dedicated Spoilers for Tools & File Changes**:
+  - `Executed tools`: Collapsible spoiler for bash commands, searches, and reads.
+  - `Modified files`: Dedicated collapsible spoiler for all `replace_file_content` and `write_to_file` edits with syntax-highlighted diffs and one-tap copy.
+- **Interactive Multi-Choice Questions**: Seamless support for agent `ask_question` tool calls with interactive single and multi-select choices.
+- **Rich Media & 500 MB Uploads**: Upload images, screen recordings, logs, and files up to 500 MB. Download and preview generated images, diffs, and deliverables directly inside the app.
 - **Live Streaming**: Real-time token streaming (`text_delta`) buffered in memory for low-latency visual feedback without database thrashing.
 - **Interactive Controls**:
-  - Cancel running turns (`SIGTERM` -> `SIGKILL`).
+  - Stop active turns with instant Cancel (`SIGTERM` -> `SIGKILL` or tmux abort).
   - Dynamic model selector loaded from server (`/v1/models`).
   - Reasoning effort control (`low`, `medium`, `high`).
   - Execution mode switch (`plan`, `accept-edits`).
@@ -29,39 +35,39 @@ A native, high-performance, offline-first Android control panel and IDE-like cli
 ## 🏗️ Architecture
 
 ```
-                    ANDROID CLIENT
-                          │
-                          ▼
-                 ┌─────────────────┐
-                 │   Compose UI    │
-                 └────────┬────────┘
-                          │
-                     ViewModels
-                          │
-                          ▼
-                 ┌─────────────────┐
-                 │   Repositories  │
-                 └────────┬────────┘
-                          │
-                 ┌────────┴─────────┐
-                 ▼                  ▼
-           ┌───────────┐      ┌─────────────┐
-           │  Room DB  │      │ Sync Engine │
-           └───────────┘      └──────┬──────┘
-                                     │
-                            HTTPS / WSS
-                                     │
-                                     ▼
-                            ┌────────────────┐
-                            │  agy-gateway   │
-                            │    FastAPI     │
-                            └───────┬────────┘
-                                    │
-                                    ▼
-                            ┌────────────────┐
-                            │ Antigravity    │
-                            │   CLI (`agy`)  │
-                            └────────────────┘
+                    ANDROID CLIENT (v1.0.33)
+                              │
+                              ▼
+                     ┌─────────────────┐
+                     │   Compose UI    │
+                     └────────┬────────┘
+                              │
+                         ViewModels
+                              │
+                              ▼
+                     ┌─────────────────┐
+                     │   Repositories  │
+                     └────────┬────────┘
+                              │
+                     ┌────────┴─────────┐
+                     ▼                  ▼
+               ┌───────────┐      ┌─────────────┐
+               │  Room DB  │      │ Sync Engine │
+               └───────────┘      └──────┬──────┘
+                                         │
+                                HTTPS / WSS (Nginx 8444)
+                                         │
+                                         ▼
+                                ┌────────────────┐
+                                │  agy-gateway   │
+                                │    FastAPI     │
+                                └───────┬────────┘
+                                        │
+                                        ▼
+                                ┌────────────────┐
+                                │ Antigravity    │
+                                │   CLI (`agy`)  │
+                                └────────────────┘
 ```
 
 - **Local Source of Truth**: Room Database persists all conversations, runs, steps, events, and file cache. UI observes Room via reactive StateFlow.
@@ -75,12 +81,14 @@ A native, high-performance, offline-first Android control panel and IDE-like cli
 1. **Connection Screen**: Configure Server URL, Device Token, and Device Name with connectivity verification test.
 2. **Chats List Screen**: Displays all active and archived agent sessions, live run status badges, search filtering, and quick creation dialog.
 3. **Chat & Agent View**:
-   - Live stream preview (`text_delta` accumulator)
+   - In-bubble live action status indicator (`Running run_command...`, `Done: ...`) with inline **Stop** button
    - Normalized steps: `USER_INPUT`, `PLANNER_RESPONSE`, `TOOL_CALL`, `GENERIC`, `ERROR`
-   - Collapsible tool execution cards with duration and arguments
-   - Structured syntax-highlighted code diff cards with one-tap copy
+   - Collapsible `Executed tools` spoiler for terminal and read commands
+   - Collapsible `Modified files` spoiler for code diffs and file edits
+   - Native voice note player with waveforms and live speech transcriptions
+   - Deliverables grid (images, videos, documents, build artifacts)
+   - Interactive `ask_question` option buttons
    - Model, reasoning effort, and mode pickers
-   - Stop button to cancel active agent tasks
 4. **Workspace File Explorer**: Browse repository files and directories with file size and timestamp metadata.
 5. **Code Viewer**: Monospace code viewer with line numbers and **Ask Agent** snippet selection quoting.
 6. **Settings Screen**: Inspect active server device tokens, revoke tokens remotely, configure agent defaults, or disconnect.

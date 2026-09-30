@@ -239,6 +239,13 @@ def get_events(
             })
         return results
 
+def get_latest_seq() -> int:
+    with _db_lock, get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COALESCE(MAX(seq), 0) FROM events")
+        row = cur.fetchone()
+        return row[0] if (row and row[0] is not None) else 0
+
 def create_device_token(device_name: str) -> tuple[int, str, str]:
     now = datetime.now(timezone.utc).isoformat()
     raw_token = f"agy_android_{secrets.token_hex(24)}"
@@ -349,9 +356,9 @@ def get_attachment(attachment_id: str) -> Optional[dict[str, Any]]:
             """
             SELECT id, conversation_id, file_name, storage_path, mime_type, size, duration, transcription, created_at
             FROM attachments
-            WHERE id = ?
+            WHERE id = ? OR storage_path = ? OR file_name = ?
             """,
-            (attachment_id,),
+            (attachment_id, attachment_id, attachment_id),
         )
         row = cur.fetchone()
         return dict(row) if row else None

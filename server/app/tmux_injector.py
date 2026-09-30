@@ -36,12 +36,18 @@ def is_tmux_turn_active(session_name: str = "agy") -> bool:
         )
         if proc.returncode == 0:
             tail = "\n".join(proc.stdout.splitlines()[-15:])
+            if "press ctrl+c again to exit" in tail:
+                return False
+            if "Navigate" in tail and "Complete" in tail:
+                return False
+            if "esc to cancel" in tail and ("enter Select" in tail or "Effort" in tail):
+                return False
             spinners = ("⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾")
             if any(s in tail for s in spinners):
                 return True
-            if "esc to cancel" in tail:
+            if "Running command" in tail or "Thinking..." in tail or "Executing" in tail:
                 return True
-            if "Running command" in tail or "Thinking..." in tail:
+            if "esc to cancel" in tail:
                 return True
     except Exception:
         pass
@@ -69,10 +75,38 @@ async def inject_message_to_tmux(conv_id: str, message: str, session_name: str =
         await proc.communicate(input=message.encode("utf-8"))
 
         # Paste buffer into the pane with bracketed paste mode (-p) so newlines are not treated as Enter
-        await asyncio.create_subprocess_exec("tmux", "paste-buffer", "-p", "-t", session_name)
-        await asyncio.sleep(0.08)
+        proc_paste = await asyncio.create_subprocess_exec("tmux", "paste-buffer", "-p", "-t", session_name)
+        await proc_paste.wait()
+
+        # Give prompt-toolkit / readline time to process the bracketed paste delimiter (\e[201~)
+        await asyncio.sleep(0.2)
+
         # Send Enter to submit the prompt
-        await asyncio.create_subprocess_exec("tmux", "send-keys", "-t", session_name, "Enter")
+        proc_enter = await asyncio.create_subprocess_exec("tmux", "send-keys", "-t", session_name, "Enter")
+        await proc_enter.wait()
+
+        # Verification & retry loop: confirm if turn started or prompt is still sitting on input line
+        for retry in range(3):
+            await asyncio.sleep(0.25)
+            chk = subprocess.run(
+                ["tmux", "capture-pane", "-t", session_name, "-p"],
+                capture_output=True,
+                text=True,
+                timeout=1,
+            )
+            if chk.returncode == 0:
+                lines = chk.stdout.splitlines()[-10:]
+                tail = "\n".join(lines)
+                spinners = ("⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾")
+                if any(s in tail for s in spinners) or "Thinking..." in tail or "Running command" in tail or "Executing" in tail:
+                    break
+                snippet = message.strip()[:20]
+                if any(f"> {snippet}" in l or f">  {snippet}" in l for l in lines):
+                    logger.warning(f"Prompt text still sitting on input line after Enter (retry {retry+1}), resending Enter...")
+                    p_retry = await asyncio.create_subprocess_exec("tmux", "send-keys", "-t", session_name, "C-m")
+                    await p_retry.wait()
+                else:
+                    break
 
         logger.info(f"Successfully injected message into tmux '{session_name}' for {conv_id} (run_id={run_id})")
         return run_id

@@ -76,16 +76,31 @@ async def handle_websocket_connection(
     client = WebSocketClient(websocket=websocket, conversation_id=conversation_id, after_seq=after)
     await hub.register(client)
 
-    # Step 1: Replay missed events if requested
+    # Step 1: Replay missed events if client was previously connected (after > 0)
+    from app.db import get_latest_seq
+    latest_seq = get_latest_seq()
     max_replayed_seq = after if after is not None else 0
-    if after is not None:
+
+    if after is not None and after > 0:
         missed = get_events(after_seq=after, conversation_id=conversation_id, limit=1000)
         for ev in missed:
             await websocket.send_text(json.dumps(ev, ensure_ascii=False))
             seq = ev.get("seq")
             if seq and seq > max_replayed_seq:
                 max_replayed_seq = seq
-        client.last_sent_seq = max_replayed_seq
+        client.last_sent_seq = max(max_replayed_seq, latest_seq)
+        if latest_seq > max_replayed_seq:
+            await websocket.send_text(json.dumps({
+                "type": "sync_seq",
+                "seq": latest_seq,
+            }))
+    else:
+        # Fresh connection / new install: fast-forward to latest seq without replaying old historical events
+        client.last_sent_seq = latest_seq
+        await websocket.send_text(json.dumps({
+            "type": "sync_seq",
+            "seq": latest_seq,
+        }))
 
     if conversation_id:
         from app.transcript_watcher import watcher_manager

@@ -46,6 +46,7 @@ class TranscriptWatcher:
         self.file_offset = 0
         self.is_active = False
         self._last_active_check = 0.0
+        self._idle_consecutive = 0
 
     async def start(self):
         self.last_step_index, self.file_offset = get_highest_monotonic_step_index(self.transcript_path)
@@ -58,11 +59,22 @@ class TranscriptWatcher:
 
     async def _watch_loop(self):
         logger.info(f"Started TranscriptWatcher for conversation {self.conversation_id} (offset={self.file_offset}, last_step={self.last_step_index})")
+        tmux_active = is_tmux_turn_active()
+        self.is_active = tmux_active
+        await hub.broadcast_live({
+            "type": "agent_activity",
+            "conversation_id": self.conversation_id,
+            "activity": "thinking" if tmux_active else "idle",
+            "detail": "Working in terminal..." if tmux_active else "",
+        })
         while not self.stop_event.is_set():
             if self.transcript_path.is_file():
                 try:
                     curr_size = self.transcript_path.stat().st_size
-                    if curr_size > self.file_offset:
+                    if curr_size < self.file_offset:
+                        logger.info(f"Transcript file truncated/compacted (size={curr_size} < offset={self.file_offset}), resetting offset")
+                        self.last_step_index, self.file_offset = get_highest_monotonic_step_index(self.transcript_path)
+                    elif curr_size > self.file_offset:
                         with open(self.transcript_path, "r", encoding="utf-8") as f:
                             f.seek(self.file_offset)
                             while True:
@@ -112,6 +124,25 @@ class TranscriptWatcher:
                                             "activity": "thinking",
                                             "detail": "Thinking...",
                                         })
+                                    elif step.status == "DONE" and not step.tool_calls:
+                                        if is_conversation_active_in_terminal(self.conversation_id):
+                                            if is_tmux_turn_active():
+                                                self.is_active = True
+                                                self._idle_consecutive = 0
+                                                await hub.broadcast_live({
+                                                    "type": "agent_activity",
+                                                    "conversation_id": self.conversation_id,
+                                                    "activity": "thinking",
+                                                    "detail": "Thinking...",
+                                                })
+                                        else:
+                                            self.is_active = False
+                                            await hub.broadcast_live({
+                                                "type": "agent_activity",
+                                                "conversation_id": self.conversation_id,
+                                                "activity": "idle",
+                                                "detail": "",
+                                            })
                 except Exception as e:
                     logger.debug(f"Error in TranscriptWatcher loop: {e}")
 
@@ -122,15 +153,28 @@ class TranscriptWatcher:
                 self._last_active_check = now
                 if is_conversation_active_in_terminal(self.conversation_id):
                     tmux_active = is_tmux_turn_active()
-                    if tmux_active and not self.is_active:
-                        self.is_active = True
-                        await hub.broadcast_live({
-                            "type": "agent_activity",
-                            "conversation_id": self.conversation_id,
-                            "activity": "thinking",
-                            "detail": "Working in terminal...",
-                        })
-                    elif not tmux_active and self.is_active:
+                    if tmux_active:
+                        self._idle_consecutive = 0
+                        if not self.is_active:
+                            self.is_active = True
+                            await hub.broadcast_live({
+                                "type": "agent_activity",
+                                "conversation_id": self.conversation_id,
+                                "activity": "thinking",
+                                "detail": "Working in terminal...",
+                            })
+                    else:
+                        self._idle_consecutive += 1
+                        if self._idle_consecutive >= 2 and self.is_active:
+                            self.is_active = False
+                            await hub.broadcast_live({
+                                "type": "agent_activity",
+                                "conversation_id": self.conversation_id,
+                                "activity": "idle",
+                                "detail": "",
+                            })
+                else:
+                    if self.is_active:
                         self.is_active = False
                         await hub.broadcast_live({
                             "type": "agent_activity",
