@@ -14,9 +14,37 @@ import com.antigravity.client.domain.model.*
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
+import com.antigravity.client.data.remote.dto.*
 import java.io.File
 import java.util.UUID
+
+val DEFAULT_SLASH_COMMANDS = listOf(
+    SlashCommandDto("model", "Выбор активной нейросети (Gemini Flash, Pro, Claude и др.)", "Модель", "model_picker", "/model"),
+    SlashCommandDto("tasks", "Просмотр и управление фоновыми процессами и субагентами", "Инструменты", "tasks", "/tasks"),
+    SlashCommandDto("artifact", "Просмотр созданных AI артефактов (планы, отчеты, код)", "Инструменты", "artifacts", "/artifact"),
+    SlashCommandDto("diff", "Показать текущий git diff (изменения файлов)", "Инструменты", "insert", "/diff"),
+    SlashCommandDto("clear", "Очистить историю текущего диалога", "Диалог", "clear", "/clear"),
+    SlashCommandDto("title", "Изменить название текущего чата", "Диалог", "insert", "/title "),
+    SlashCommandDto("fork", "Ответвить диалог в новый чат с текущего шага", "Диалог", "insert", "/fork"),
+    SlashCommandDto("rewind", "Откатить диалог на предыдущий шаг", "Диалог", "insert", "/rewind"),
+    SlashCommandDto("btw", "Задать попутный вопрос без засорения контекста", "Диалог", "insert", "/btw "),
+    SlashCommandDto("effort", "Уровень рассуждений модели (low, medium, high)", "Модель", "insert", "/effort "),
+    SlashCommandDto("context", "Показать занятый объем контекстного окна и токены", "Модель", "insert", "/context"),
+    SlashCommandDto("usage", "Показать статистику расхода токенов и квот", "Модель", "insert", "/usage"),
+    SlashCommandDto("credits", "Проверить остаток кредитов и баланса", "Модель", "insert", "/credits"),
+    SlashCommandDto("goal", "Автономное достижение цели до победного конца", "Режимы", "insert", "/goal "),
+    SlashCommandDto("plan", "Создать подробный план реализации перед кодингом", "Режимы", "insert", "/plan "),
+    SlashCommandDto("teamwork-preview", "Запуск мультиагентной команды для масштабных задач", "Режимы", "insert", "/teamwork-preview"),
+    SlashCommandDto("grill-me", "Интервью: агент задаст уточняющие вопросы по требованиям", "Режимы", "insert", "/grill-me"),
+    SlashCommandDto("boost", "Углубленный анализ задачи с разных точек зрения", "Режимы", "insert", "/boost "),
+    SlashCommandDto("browser", "Автоматизация действий и поиск через веб-браузер", "Режимы", "insert", "/browser "),
+    SlashCommandDto("schedule", "Запуск задачи по расписанию или таймеру", "Режимы", "insert", "/schedule "),
+    SlashCommandDto("learn", "Запомнить правило/инструкцию для будущих сессий", "Режимы", "insert", "/learn "),
+    SlashCommandDto("agents", "Список всех доступных специализированных субагентов", "Агенты", "insert", "/agents"),
+    SlashCommandDto("skills", "Список подключенных навыков и умений агента", "Агенты", "insert", "/skills"),
+    SlashCommandDto("mcp", "Статус серверов MCP (Model Context Protocol)", "Агенты", "insert", "/mcp"),
+    SlashCommandDto("help", "Справка по всем возможностям и слэш-командам", "Справка", "help", "/help")
+)
 
 val DEFAULT_MODELS = listOf(
     ModelOption("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)", "Самые быстрые и точные ответы, высокая логика"),
@@ -80,6 +108,60 @@ class ChatViewModel(
     val selectedModel = MutableStateFlow<String>(tokenStore.selectedModel ?: "gemini-3.8-flash-high")
     val selectedEffort = MutableStateFlow<String>(tokenStore.selectedEffort)
 
+    val slashCommands = MutableStateFlow<List<SlashCommandDto>>(DEFAULT_SLASH_COMMANDS)
+    val artifacts = MutableStateFlow<List<ArtifactDto>>(emptyList())
+    val tasks = MutableStateFlow<TasksResponseDto>(TasksResponseDto())
+    val isLoadingArtifacts = MutableStateFlow(false)
+    val isLoadingTasks = MutableStateFlow(false)
+
+    fun refreshChat() {
+        viewModelScope.launch {
+            try {
+                repository.fetchStepsHistory(conversationId)
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
+
+    fun loadArtifacts() {
+        viewModelScope.launch {
+            isLoadingArtifacts.value = true
+            try {
+                artifacts.value = repository.getArtifacts(conversationId)
+            } finally {
+                isLoadingArtifacts.value = false
+            }
+        }
+    }
+
+    fun loadTasks() {
+        viewModelScope.launch {
+            isLoadingTasks.value = true
+            try {
+                tasks.value = repository.getTasks(conversationId)
+            } finally {
+                isLoadingTasks.value = false
+            }
+        }
+    }
+
+    fun killTask(taskId: String) {
+        viewModelScope.launch {
+            repository.killTask(conversationId, taskId)
+            loadTasks()
+        }
+    }
+
+    fun sendQuestionAnswer(answerText: String) {
+        inputMessage.value = answerText
+        sendMessage()
+    }
+
+    suspend fun getFileContent(path: String): String {
+        return repository.getFileContent(path)
+    }
+
     fun selectModel(modelId: String) {
         selectedModel.value = modelId
         tokenStore.selectedModel = modelId
@@ -94,7 +176,7 @@ class ChatViewModel(
         // Subscribe WebSocket to this active conversation for live transcript streaming
         syncEngine.subscribeToConversation(conversationId)
 
-        // Load available models
+        // Load available models and slash commands
         viewModelScope.launch {
             try {
                 val serverModels = repository.getAvailableModels()
@@ -103,6 +185,17 @@ class ChatViewModel(
                 }
             } catch (e: Exception) {
                 // Keep default models
+            }
+        }
+
+        viewModelScope.launch {
+            try {
+                val serverCmds = repository.getSlashCommands()
+                if (serverCmds.isNotEmpty()) {
+                    slashCommands.value = serverCmds
+                }
+            } catch (e: Exception) {
+                // Keep default slash commands
             }
         }
 

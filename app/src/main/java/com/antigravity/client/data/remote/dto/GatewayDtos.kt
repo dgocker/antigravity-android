@@ -160,3 +160,42 @@ data class DeviceTokenInfoDto(
     @SerializedName("last_used_at") val lastUsedAt: String? = null,
     @SerializedName("revoked_at") val revokedAt: String? = null
 )
+
+data class ArtifactDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("file_name") val fileName: String,
+    @SerializedName("path") val path: String,
+    @SerializedName("summary") val summary: String = "",
+    @SerializedName("updated_at") val updatedAt: String = "",
+    @SerializedName("size_bytes") val sizeBytes: Long = 0L
+)
+
+data class SubagentDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("type_name") val typeName: String,
+    @SerializedName("role") val role: String,
+    @SerializedName("state") val state: String,
+    @SerializedName("workspace") val workspace: String = ""
+)
+
+data class TaskItemDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("log_file") val logFile: String,
+    @SerializedName("size_bytes") val sizeBytes: Long = 0L,
+    @SerializedName("updated_at") val updatedAt: String = ""
+)
+
+data class TasksResponseDto(
+    @SerializedName("subagents") val subagents: List<SubagentDto> = emptyList(),
+    @SerializedName("tasks") val tasks: List<TaskItemDto> = emptyList()
+)
+
+data class SlashCommandDto(
+    @SerializedName("name") val name: String,
+    @SerializedName("description") val description: String,
+    @SerializedName("category") val category: String,
+    @SerializedName("action") val action: String = "insert",
+    @SerializedName("example") val example: String = ""
+)

@@ -22,8 +22,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import com.antigravity.client.audio.AudioRecorder
 import com.antigravity.client.audio.AudioRecordingResult
+import com.antigravity.client.data.remote.dto.SlashCommandDto
 import com.antigravity.client.domain.model.Attachment
 import com.antigravity.client.ui.theme.*
 
@@ -40,6 +45,8 @@ fun TelegramComposer(
     onPickFile: () -> Unit,
     isRunning: Boolean,
     onCancelRun: () -> Unit,
+    slashCommands: List<SlashCommandDto> = emptyList(),
+    onSlashCommandSelect: (SlashCommandDto) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -124,6 +131,90 @@ fun TelegramComposer(
             attachments = attachments,
             onRemoveAttachment = onRemoveAttachment
         )
+
+        // Slash Commands Autocomplete Popup
+        val isSlashMenuOpen = text.startsWith("/") && !text.contains(" ")
+        val slashQuery = if (isSlashMenuOpen) text.removePrefix("/").trim() else ""
+        val filteredCommands = remember(slashQuery, slashCommands) {
+            if (!isSlashMenuOpen) emptyList()
+            else if (slashQuery.isBlank()) slashCommands
+            else slashCommands.filter {
+                it.name.contains(slashQuery, ignoreCase = true) ||
+                it.description.contains(slashQuery, ignoreCase = true) ||
+                it.category.contains(slashQuery, ignoreCase = true)
+            }
+        }
+
+        if (isSlashMenuOpen && filteredCommands.isNotEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceVariant),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Слэш-команды (${filteredCommands.size})",
+                            color = TextMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Нажмите для выбора",
+                            color = TextMuted,
+                            fontSize = 10.sp
+                        )
+                    }
+                    HorizontalDivider(color = DarkBackground, thickness = 1.dp)
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp)
+                    ) {
+                        items(filteredCommands, key = { it.name }) { cmd ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSlashCommandSelect(cmd) }
+                                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "/${cmd.name}",
+                                    color = PrimaryBlue,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.width(115.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = cmd.description,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = cmd.category,
+                                        color = TextMuted,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Main Composer Row
         Row(

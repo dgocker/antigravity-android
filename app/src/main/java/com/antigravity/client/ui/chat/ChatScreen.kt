@@ -27,7 +27,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.antigravity.client.data.remote.dto.ArtifactDto
+import com.antigravity.client.data.remote.dto.SlashCommandDto
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -354,6 +358,24 @@ fun ChatScreen(
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
     val selectedEffort by viewModel.selectedEffort.collectAsStateWithLifecycle()
     val pendingAttachments by viewModel.pendingAttachments.collectAsStateWithLifecycle()
+    val slashCommands by viewModel.slashCommands.collectAsStateWithLifecycle()
+    val artifacts by viewModel.artifacts.collectAsStateWithLifecycle()
+    val tasks by viewModel.tasks.collectAsStateWithLifecycle()
+    val isLoadingArtifacts by viewModel.isLoadingArtifacts.collectAsStateWithLifecycle()
+    val isLoadingTasks by viewModel.isLoadingTasks.collectAsStateWithLifecycle()
+
+    var showModelSheet by remember { mutableStateOf(false) }
+    var showTasksSheet by remember { mutableStateOf(false) }
+    var showArtifactsSheet by remember { mutableStateOf(false) }
+    var previewArtifact by remember { mutableStateOf<ArtifactDto?>(null) }
+    var previewArtifactContent by remember { mutableStateOf("") }
+    var isLoadingArtifactContent by remember { mutableStateOf(false) }
+
+    // Auto-refresh chat history when returning to foreground (e.g. from Termius/terminal)
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshChat()
+        onPauseOrDispose { }
+    }
 
     var previewImageUrl by remember { mutableStateOf<String?>(null) }
     var previewImageName by remember { mutableStateOf<String?>(null) }
@@ -772,7 +794,10 @@ fun ChatScreen(
                                 deltaText = displayDeltaText,
                                 onCancel = { viewModel.cancelRun() },
                                 onPreviewImage = { previewImageUrl = it; previewImageName = null },
-                                resolveServerUrl = { viewModel.getFileRawUrl(it) }
+                                resolveServerUrl = { viewModel.getFileRawUrl(it) },
+                                onAnswerQuestion = { answer ->
+                                    viewModel.sendQuestionAnswer(answer)
+                                }
                             )
                         }
                     }
@@ -785,13 +810,54 @@ fun ChatScreen(
                 onTextChange = { viewModel.inputMessage.value = it },
                 attachments = pendingAttachments,
                 onRemoveAttachment = { viewModel.removePendingAttachment(it) },
-                onSend = { viewModel.sendMessage() },
+                onSend = {
+                    val trimmed = inputMessage.trim()
+                    when {
+                        trimmed.equals("/tasks", ignoreCase = true) -> {
+                            viewModel.inputMessage.value = ""
+                            viewModel.loadTasks()
+                            showTasksSheet = true
+                        }
+                        trimmed.equals("/model", ignoreCase = true) -> {
+                            viewModel.inputMessage.value = ""
+                            showModelSheet = true
+                        }
+                        trimmed.equals("/artifact", ignoreCase = true) || trimmed.equals("/artifacts", ignoreCase = true) -> {
+                            viewModel.inputMessage.value = ""
+                            viewModel.loadArtifacts()
+                            showArtifactsSheet = true
+                        }
+                        else -> viewModel.sendMessage()
+                    }
+                },
                 onVoiceRecorded = { viewModel.attachVoiceNote(it) },
                 onPickCamera = { launchCamera() },
                 onPickGallery = { galleryLauncher.launch("image/*") },
                 onPickFile = { fileLauncher.launch(arrayOf("*/*")) },
                 isRunning = isRunning,
-                onCancelRun = { viewModel.cancelRun() }
+                onCancelRun = { viewModel.cancelRun() },
+                slashCommands = slashCommands,
+                onSlashCommandSelect = { cmd ->
+                    when (cmd.action) {
+                        "select_model" -> {
+                            viewModel.inputMessage.value = ""
+                            showModelSheet = true
+                        }
+                        "view_tasks" -> {
+                            viewModel.inputMessage.value = ""
+                            viewModel.loadTasks()
+                            showTasksSheet = true
+                        }
+                        "view_artifacts" -> {
+                            viewModel.inputMessage.value = ""
+                            viewModel.loadArtifacts()
+                            showArtifactsSheet = true
+                        }
+                        else -> {
+                            viewModel.inputMessage.value = "/${cmd.name} "
+                        }
+                    }
+                }
             )
         }
     }
@@ -805,6 +871,65 @@ fun ChatScreen(
                 previewImageName = null
             },
             onDownload = { viewModel.downloadFile(context, url, previewImageName) }
+        )
+    }
+
+    if (showModelSheet) {
+        ModelSelectionBottomSheet(
+            selectedModelId = selectedModel,
+            selectedEffort = selectedEffort,
+            availableModels = availableModels,
+            onDismiss = { showModelSheet = false },
+            onSelectModel = {
+                viewModel.selectModel(it)
+                showModelSheet = false
+            },
+            onSelectEffort = {
+                viewModel.selectEffort(it)
+                showModelSheet = false
+            }
+        )
+    }
+
+    if (showTasksSheet) {
+        TasksBottomSheet(
+            tasks = tasks,
+            isLoading = isLoadingTasks,
+            onRefresh = { viewModel.loadTasks() },
+            onKillTask = { viewModel.killTask(it) },
+            onDismiss = { showTasksSheet = false }
+        )
+    }
+
+    if (showArtifactsSheet) {
+        ArtifactsBottomSheet(
+            artifacts = artifacts,
+            isLoading = isLoadingArtifacts,
+            onRefresh = { viewModel.loadArtifacts() },
+            onSelectArtifact = { art ->
+                previewArtifact = art
+                isLoadingArtifactContent = true
+                coroutineScope.launch {
+                    previewArtifactContent = viewModel.getFileContent(art.path)
+                    isLoadingArtifactContent = false
+                }
+            },
+            onDownloadArtifact = { art ->
+                viewModel.downloadFile(context, art.path, art.fileName)
+            },
+            onDismiss = { showArtifactsSheet = false }
+        )
+    }
+
+    previewArtifact?.let { art ->
+        ArtifactPreviewDialog(
+            artifact = art,
+            content = previewArtifactContent,
+            isLoading = isLoadingArtifactContent,
+            onDismiss = { previewArtifact = null },
+            onDownload = {
+                viewModel.downloadFile(context, art.path, art.fileName)
+            }
         )
     }
 }
@@ -1273,7 +1398,8 @@ private fun LiveTurnCard(
     deltaText: String,
     onCancel: () -> Unit,
     onPreviewImage: (String) -> Unit,
-    resolveServerUrl: (String) -> String
+    resolveServerUrl: (String) -> String,
+    onAnswerQuestion: (String) -> Unit = {}
 ) {
     Surface(
         color = DarkSurface,
@@ -1283,6 +1409,13 @@ private fun LiveTurnCard(
             .clip(RoundedCornerShape(12.dp))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            val isAskQuestion = activity != null && (
+                activity.tool_name == "ask_question" ||
+                activity.detail.contains("ask_question", ignoreCase = true) ||
+                activity.parameters.containsKey("questions") ||
+                activity.parameters.containsKey("question")
+            )
+
             // Header: Status indicator + Stop button
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1291,8 +1424,25 @@ private fun LiveTurnCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val actType = activity?.activity ?: if (deltaText.isNotEmpty()) "generating" else "thinking"
-                    when (actType) {
-                        "tool_running" -> {
+                    when {
+                        isAskQuestion -> {
+                            Icon(
+                                imageVector = Icons.Default.QuestionAnswer,
+                                contentDescription = null,
+                                tint = WarningOrange,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Вопрос от агента (требуется ответ)",
+                                color = WarningOrange,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        actType == "tool_running" -> {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(14.dp),
                                 color = AccentGreen,
@@ -1308,7 +1458,7 @@ private fun LiveTurnCard(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        "generating" -> {
+                        actType == "generating" -> {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(14.dp),
                                 color = PrimaryBlue,
@@ -1352,8 +1502,97 @@ private fun LiveTurnCard(
                 }
             }
 
-            // Actively executing tool parameters
-            if (activity != null && activity.activity == "tool_running" && activity.parameters.isNotEmpty()) {
+            // Interactive ask_question parameters
+            if (isAskQuestion && activity != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                val rawQuestions = activity.parameters["questions"] as? List<*>
+                val questionsList = mutableListOf<Triple<String, List<String>, Boolean>>()
+                if (rawQuestions != null) {
+                    for (item in rawQuestions) {
+                        if (item is Map<*, *>) {
+                            val qText = item["question"]?.toString() ?: ""
+                            val opts = (item["options"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                            val multi = item["is_multi_select"] as? Boolean ?: false
+                            questionsList.add(Triple(qText, opts, multi))
+                        } else if (item is String) {
+                            questionsList.add(Triple(item, emptyList(), false))
+                        }
+                    }
+                } else {
+                    val singleQ = (activity.parameters["question"] as? String) ?: ""
+                    val opts = (activity.parameters["options"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                    val multi = activity.parameters["is_multi_select"] as? Boolean ?: false
+                    if (singleQ.isNotBlank() || opts.isNotEmpty()) {
+                        questionsList.add(Triple(singleQ, opts, multi))
+                    }
+                }
+
+                if (questionsList.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(DarkSurfaceVariant)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        questionsList.forEach { (qTitle, opts, _) ->
+                            if (qTitle.isNotBlank()) {
+                                Text(
+                                    text = qTitle,
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            if (opts.isNotEmpty()) {
+                                Text(
+                                    text = "Нажмите для ответа:",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    opts.forEach { opt ->
+                                        Surface(
+                                            color = DarkBackground,
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f)),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { onAnswerQuestion(opt) }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircleOutline,
+                                                    contentDescription = null,
+                                                    tint = PrimaryBlue,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = opt,
+                                                    color = TextPrimary,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = "Введите ваш ответ в поле сообщения ниже",
+                                    color = TextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (activity != null && activity.activity == "tool_running" && activity.parameters.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 val cmd = activity.parameters["CommandLine"] as? String
                 val path = (activity.parameters["TargetFile"] as? String) ?: (activity.parameters["AbsolutePath"] as? String)

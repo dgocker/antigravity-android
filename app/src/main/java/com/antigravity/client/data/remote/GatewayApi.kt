@@ -76,4 +76,16 @@ interface GatewayApi {
     suspend fun revokeDeviceToken(
         @Path("id") tokenId: Int
     ): Response<Unit>
+
+    @GET("v1/slash-commands")
+    suspend fun getSlashCommands(): List<SlashCommandDto>
+
+    @GET("v1/chats/{id}/artifacts")
+    suspend fun getArtifacts(@Path("id") chatId: String): List<ArtifactDto>
+
+    @GET("v1/chats/{id}/tasks")
+    suspend fun getTasks(@Path("id") chatId: String): TasksResponseDto
+
+    @POST("v1/chats/{id}/tasks/{taskId}/kill")
+    suspend fun killTask(@Path("id") chatId: String, @Path("taskId") taskId: String): Response<Unit>
 }

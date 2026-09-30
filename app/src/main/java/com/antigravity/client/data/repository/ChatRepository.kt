@@ -453,4 +453,44 @@ class ChatRepository(
             error = error
         )
     }
+
+    suspend fun getArtifacts(conversationId: String): List<ArtifactDto> = withContext(Dispatchers.IO) {
+        try {
+            networkClient.getApi().getArtifacts(conversationId)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getTasks(conversationId: String): TasksResponseDto = withContext(Dispatchers.IO) {
+        try {
+            networkClient.getApi().getTasks(conversationId)
+        } catch (e: Exception) {
+            TasksResponseDto()
+        }
+    }
+
+    suspend fun killTask(conversationId: String, taskId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            networkClient.getApi().killTask(conversationId, taskId).isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun getSlashCommands(): List<SlashCommandDto> = withContext(Dispatchers.IO) {
+        try {
+            networkClient.getApi().getSlashCommands()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getFileContent(path: String): String = withContext(Dispatchers.IO) {
+        try {
+            networkClient.getApi().getFileContent(path).content
+        } catch (e: Exception) {
+            "Не удалось загрузить содержимое файла: ${e.message}"
+        }
+    }
 }
