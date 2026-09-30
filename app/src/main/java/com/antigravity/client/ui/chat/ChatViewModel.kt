@@ -525,20 +525,58 @@ class ChatViewModel(
         val downloadUrl = "$baseUrl/v1/files/raw?path=$encodedPath&download=true&token=$token"
         val fileName = customFilename ?: cleanPath.substringAfterLast('/').ifEmpty { "downloaded_file" }
 
-        try {
-            val request = android.app.DownloadManager.Request(android.net.Uri.parse(downloadUrl)).apply {
-                setTitle(fileName)
-                setDescription("Downloading $fileName from server")
-                setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
-                setAllowedOverMetered(true)
-                setAllowedOverRoaming(true)
+        android.widget.Toast.makeText(context, "Скачивание начато: $fileName", android.widget.Toast.LENGTH_SHORT).show()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val req = okhttp3.Request.Builder()
+                    .url(downloadUrl)
+                    .addHeader("Authorization", "Bearer $token")
+                    .build()
+                val response = app.networkClient.okHttpClient.newCall(req).execute()
+                if (!response.isSuccessful) {
+                    val code = response.code
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Ошибка сервера при скачивании (код $code)", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val body = response.body ?: throw Exception("Пустой ответ от сервера")
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    val mime = response.header("Content-Type") ?: "application/octet-stream"
+                    val values = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                    }
+                    val resolver = context.contentResolver
+                    val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    if (uri != null) {
+                        resolver.openOutputStream(uri)?.use { out ->
+                            body.byteStream().copyTo(out)
+                        }
+                    } else {
+                        throw Exception("Не удалось создать файл в Downloads")
+                    }
+                } else {
+                    val targetDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    if (!targetDir.exists()) targetDir.mkdirs()
+                    val targetFile = java.io.File(targetDir, fileName)
+                    targetFile.outputStream().use { out ->
+                        body.byteStream().copyTo(out)
+                    }
+                }
+
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Файл сохранен в Загрузки: $fileName", android.widget.Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Ошибка скачивания: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
             }
-            val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-            dm.enqueue(request)
-            android.widget.Toast.makeText(context, "Скачивание начато: $fileName", android.widget.Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(context, "Ошибка загрузки: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 

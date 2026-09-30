@@ -184,14 +184,9 @@ class SyncEngine(
                     )
                     stepDao.insertOrUpdate(step)
 
-                    // Clear live delta and mark IDLE for finished planner step
-                    if (step.type == "PLANNER_RESPONSE" && step.status == "DONE") {
+                    // Clear live delta once planner text is committed to database step
+                    if (step.type == "PLANNER_RESPONSE" && !step.content.isNullOrBlank()) {
                         _liveDeltas.value = _liveDeltas.value - conversationId
-                        _liveActivity.value = _liveActivity.value - conversationId
-                        if (conversationId.isNotBlank()) {
-                            conversationDao.updateStatus(conversationId, "CASCADE_RUN_STATUS_IDLE")
-                            scope.launch { onSyncRequired?.invoke(conversationId) }
-                        }
                     }
                 }
             }

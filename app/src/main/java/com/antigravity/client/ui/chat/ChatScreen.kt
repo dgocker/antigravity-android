@@ -308,7 +308,7 @@ fun ChatScreen(
     val hasDelta = activeDeltaText.isNotEmpty()
     val isSending = pendingMessages.any { it.status == MessageDeliveryStatus.SENDING }
     val isRunning = isActivityRunning || isServerRunning || hasDelta || isSending
-    val isLiveTurnVisible = isActivityRunning || hasDelta || isServerRunning
+    val isLiveTurnVisible = (liveActivity != null && liveActivity?.activity != "idle") || hasDelta
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -359,7 +359,7 @@ fun ChatScreen(
             } else if (totalItems > previousTotalItems) {
                 val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                 if (lastVisible >= previousTotalItems - 2) {
-                    listState.scrollToItem(totalItems - 1)
+                    listState.animateScrollToItem(totalItems - 1)
                 }
             }
             previousTotalItems = totalItems
@@ -801,30 +801,31 @@ fun extractAttachmentsFromBubble(bubble: ConversationBubble.Agent): List<FileAtt
 
     bubble.toolCallsWithResults.forEach { (tool, _) ->
         when (tool.name) {
-            "write_to_file", "replace_file_content" -> {
-                add(tool.args["TargetFile"] as? String, "File created / modified")
-            }
             "generate_image" -> {
                 val img = (tool.args["ImageName"] as? String) ?: "generated_image.png"
                 add(img, "Generated Image")
             }
             "view_file" -> {
                 val p = tool.args["AbsolutePath"] as? String
-                if (p != null && (p.endsWith(".png", true) || p.endsWith(".jpg", true) || p.endsWith(".pdf", true) || p.endsWith(".apk", true))) {
+                if (p != null && (p.endsWith(".png", true) || p.endsWith(".jpg", true) || p.endsWith(".pdf", true) || p.endsWith(".apk", true) || p.endsWith(".mp4", true))) {
                     add(p, "Viewed File")
                 }
             }
         }
     }
 
-    bubble.diffs.forEach { diff ->
-        add(diff.file, "Modified in diff")
-    }
-
     bubble.messageText?.let { text ->
         val fileRegex = Regex("""\[(.*?)\]\((file:///[^\s)]+|/[^\s)]+)\)""")
         fileRegex.findAll(text).forEach { m ->
-            add(m.groupValues[2], "Referenced file")
+            val p = m.groupValues[2]
+            val isDeliverable = p.endsWith(".apk", true) || p.endsWith(".zip", true) ||
+                                p.endsWith(".pdf", true) || p.endsWith(".png", true) ||
+                                p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) ||
+                                p.endsWith(".webp", true) || p.endsWith(".mp4", true) ||
+                                p.endsWith(".tar.gz", true) || p.endsWith(".csv", true)
+            if (isDeliverable) {
+                add(p, "Referenced file")
+            }
         }
     }
 
