@@ -3,6 +3,7 @@ package com.antigravity.client.ui.chat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -384,22 +385,65 @@ fun ChatScreen(
 
     val hasEarlier = allBubbles.size > visibleLimit
     val totalItems = (if (hasEarlier) 1 else 0) + displayedBubbles.size + (if (isLiveTurnVisible) 1 else 0)
-    var previousTotalItems by remember { mutableIntStateOf(totalItems) }
 
-    // Instant jump to bottom on initial load, smooth auto-scroll ONLY when new items arrive and user is at bottom
-    LaunchedEffect(totalItems) {
+    val lastBubble = displayedBubbles.lastOrNull()
+    val bottomContentKey = remember(
+        totalItems,
+        lastBubble,
+        liveActivity?.activity,
+        liveActivity?.detail,
+        liveActivity?.parameters?.size,
+        activeDeltaText.length / 30
+    ) {
+        when (lastBubble) {
+            is ConversationBubble.Agent -> {
+                "${totalItems}_${lastBubble.stepIndex}_${lastBubble.diffs.size}_${lastBubble.toolCallsWithResults.size}_${lastBubble.messageText?.length ?: 0}_${liveActivity?.activity}_${liveActivity?.detail}_${activeDeltaText.length / 30}"
+            }
+            is ConversationBubble.User -> {
+                "${totalItems}_${lastBubble.id}_${lastBubble.status}_${liveActivity?.activity}_${activeDeltaText.length / 30}"
+            }
+            null -> "$totalItems"
+        }
+    }
+
+    // Instant jump to bottom on initial load, auto-scroll when new items arrive or bottom content expands (new diffs/tools/text)
+    LaunchedEffect(bottomContentKey) {
         if (totalItems > 0) {
             if (!isInitialScrollDone) {
                 listState.scrollToItem(totalItems - 1)
                 isInitialScrollDone = true
-            } else if (totalItems > previousTotalItems) {
-                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                val wasNearBottom = lastVisible >= previousTotalItems - 2
-                if (wasNearBottom && !listState.isScrollInProgress) {
-                    listState.animateScrollToItem(totalItems - 1)
+                return@LaunchedEffect
+            }
+
+            if (listState.isScrollInProgress) return@LaunchedEffect
+
+            val layoutInfo = listState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) return@LaunchedEffect
+
+            val lastVisibleIndex = visibleItems.last().index
+            val totalCount = layoutInfo.totalItemsCount
+
+            // Check if user was looking at the bottom area (within 2 items of bottom)
+            val isUserAtBottom = lastVisibleIndex >= totalCount - 2
+
+            if (isUserAtBottom) {
+                if (lastVisibleIndex < totalCount - 1) {
+                    listState.scrollToItem(totalCount - 1)
+                }
+
+                // If the last item extends below the viewport bottom (e.g. new REPLACE card added),
+                // scroll down to fully reveal it above the composer
+                kotlinx.coroutines.delay(35)
+                val updatedLayout = listState.layoutInfo
+                val updatedLast = updatedLayout.visibleItemsInfo.lastOrNull()
+                if (updatedLast != null && updatedLast.index == totalCount - 1) {
+                    val overflow = (updatedLast.offset + updatedLast.size) - updatedLayout.viewportEndOffset
+                    if (overflow > 0) {
+                        listState.scrollBy(overflow.toFloat() + 24f)
+                    }
                 }
             }
-            previousTotalItems = totalItems
         }
     }
 
@@ -409,6 +453,15 @@ fun ChatScreen(
     LaunchedEffect(imeBottom) {
         if (imeBottom > 0 && totalItems > 0) {
             listState.scrollToItem(totalItems - 1)
+            kotlinx.coroutines.delay(35)
+            val updatedLayout = listState.layoutInfo
+            val updatedLast = updatedLayout.visibleItemsInfo.lastOrNull()
+            if (updatedLast != null && updatedLast.index == totalItems - 1) {
+                val overflow = (updatedLast.offset + updatedLast.size) - updatedLayout.viewportEndOffset
+                if (overflow > 0) {
+                    listState.scrollBy(overflow.toFloat() + 24f)
+                }
+            }
         }
     }
 
