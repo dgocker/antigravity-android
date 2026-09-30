@@ -247,3 +247,14 @@ View live server logs:
 ```bash
 sudo journalctl -u agy-gateway -f
 ```
+
+---
+
+## ☕ Support
+
+If this project helps you or saves you time, consider supporting its development:
+
+[![Donate](https://img.shields.io/badge/Donate-DonationAlerts-FF6B00?style=for-the-badge&logo=donationalerts&logoColor=white)](https://www.donationalerts.com/r/dgocker)
+
+**[donationalerts.com/r/dgocker](https://www.donationalerts.com/r/dgocker)**
+

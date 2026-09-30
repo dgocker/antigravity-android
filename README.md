@@ -5,6 +5,7 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.3-purple.svg)
 ![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20Material3-brightgreen.svg)
 ![Architecture](https://img.shields.io/badge/Architecture-Offline--First%20%7C%20Room%20SSOT-orange.svg)
+[![Donate](https://img.shields.io/badge/Donate-DonationAlerts-FF6B00?logo=donationalerts&logoColor=white)](https://www.donationalerts.com/r/dgocker)
 
 A native, high-performance, offline-first Android control panel and IDE-like client for **Antigravity CLI (`agy`)** communicating with your server via `agy-gateway`.
 
@@ -177,3 +178,14 @@ server {
     # ssl_certificate_key ...
 }
 ```
+
+---
+
+## ☕ Support
+
+If this project helps you or saves you time, consider supporting its development:
+
+[![Donate](https://img.shields.io/badge/Donate-DonationAlerts-FF6B00?style=for-the-badge&logo=donationalerts&logoColor=white)](https://www.donationalerts.com/r/dgocker)
+
+**[donationalerts.com/r/dgocker](https://www.donationalerts.com/r/dgocker)**
+
