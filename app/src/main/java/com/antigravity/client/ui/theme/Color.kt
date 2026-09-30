@@ -16,6 +16,8 @@ val TextSecondary = Color(0xFF94A3B8)
 val TextMuted = Color(0xFF64748B)
 
 val SuccessGreen = Color(0xFF22C55E)
+val AccentGreen = Color(0xFF10B981)
+val AccentPurple = Color(0xFF8B5CF6)
 val WarningOrange = Color(0xFFF59E0B)
 val ErrorRed = Color(0xFFEF4444)
 
