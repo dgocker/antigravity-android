@@ -24,6 +24,7 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -878,14 +879,19 @@ fun ChatScreen(
                                 },
                                 onRetry = { viewModel.retryPendingMessage(bubble.id) }
                             )
-                            is ConversationBubble.Agent -> AgentBubble(
-                                bubble = bubble,
-                                viewModel = viewModel,
-                                onPreviewImage = { url, name ->
-                                    previewImageUrl = url
-                                    previewImageName = name
-                                }
-                            )
+                            is ConversationBubble.Agent -> {
+                                val isLastBubble = bubble == displayedBubbles.lastOrNull()
+                                val isTurnRunning = isLastBubble && (isActivityRunning || activeDeltaText.isNotEmpty())
+                                AgentBubble(
+                                    bubble = bubble,
+                                    viewModel = viewModel,
+                                    isTurnRunning = isTurnRunning,
+                                    onPreviewImage = { url, name ->
+                                        previewImageUrl = url
+                                        previewImageName = name
+                                    }
+                                )
+                            }
                         }
                     }
 
@@ -1437,6 +1443,7 @@ fun extractAttachmentsFromBubble(bubble: ConversationBubble.Agent): List<FileAtt
 private fun AgentBubble(
     bubble: ConversationBubble.Agent,
     viewModel: ChatViewModel,
+    isTurnRunning: Boolean = false,
     onPreviewImage: (String, String?) -> Unit
 ) {
     val context = LocalContext.current
@@ -1467,6 +1474,21 @@ private fun AgentBubble(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
+                if (isTurnRunning) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(AccentGreen, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "В процессе...",
+                        color = AccentGreen,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
             Text(
                 text = "Step #${bubble.stepIndex}",
@@ -1662,6 +1684,30 @@ private fun AgentBubble(
                     color = ErrorRed,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+
+        // In-progress indicator if turn is actively running
+        if (isTurnRunning) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(13.dp),
+                    strokeWidth = 2.dp,
+                    color = AccentGreen
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Агент формирует ответ...",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    fontStyle = FontStyle.Italic
                 )
             }
         }
