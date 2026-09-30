@@ -73,6 +73,88 @@ fun cleanTextFromSystemNoise(rawText: String): String {
     return text.trim()
 }
 
+private val VOICE_TAG_RE = Regex("""\[Голосовое сообщение:\s*([^ ]+)\s*\(([^,\)]+)(?:,\s*(\d+)s)?\)\](?:\s*\nРасшифровка аудио:\s*"([^"]*)")?""", RegexOption.IGNORE_CASE)
+private val IMAGE_TAG_RE = Regex("""\[Изображение:\s*([^ ]+)\s*\(([^,]+),\s*(\d+)\s*KB\)\]""", RegexOption.IGNORE_CASE)
+private val VIDEO_TAG_RE = Regex("""\[Видео:\s*([^ ]+)\s*\(([^,]+),\s*(\d+)\s*KB\)\]""", RegexOption.IGNORE_CASE)
+private val FILE_TAG_RE = Regex("""\[Вложение:\s*([^ ]+)\s*\(([^,]+),\s*(\d+)\s*KB\)\]""", RegexOption.IGNORE_CASE)
+
+fun extractAttachmentsFromRawText(rawText: String?): List<Attachment> {
+    if (rawText.isNullOrBlank()) return emptyList()
+    val list = mutableListOf<Attachment>()
+    VOICE_TAG_RE.findAll(rawText).forEach { m ->
+        val path = m.groupValues[1].trim()
+        val mime = m.groupValues[2].trim()
+        val dur = m.groupValues[3].toIntOrNull()
+        val trans = m.groupValues[4].takeIf { it.isNotBlank() }
+        list.add(
+            Attachment(
+                id = path,
+                type = AttachmentType.AUDIO,
+                fileName = path.substringAfterLast('/'),
+                mimeType = mime,
+                size = 0L,
+                duration = dur,
+                remoteUrl = path,
+                serverId = path,
+                transcription = trans,
+                uploadState = AttachmentUploadState.COMPLETED
+            )
+        )
+    }
+    IMAGE_TAG_RE.findAll(rawText).forEach { m ->
+        val path = m.groupValues[1].trim()
+        val mime = m.groupValues[2].trim()
+        val sz = (m.groupValues[3].toLongOrNull() ?: 0L) * 1024L
+        list.add(
+            Attachment(
+                id = path,
+                type = AttachmentType.IMAGE,
+                fileName = path.substringAfterLast('/'),
+                mimeType = mime,
+                size = sz,
+                remoteUrl = path,
+                serverId = path,
+                uploadState = AttachmentUploadState.COMPLETED
+            )
+        )
+    }
+    VIDEO_TAG_RE.findAll(rawText).forEach { m ->
+        val path = m.groupValues[1].trim()
+        val mime = m.groupValues[2].trim()
+        val sz = (m.groupValues[3].toLongOrNull() ?: 0L) * 1024L
+        list.add(
+            Attachment(
+                id = path,
+                type = AttachmentType.VIDEO,
+                fileName = path.substringAfterLast('/'),
+                mimeType = mime,
+                size = sz,
+                remoteUrl = path,
+                serverId = path,
+                uploadState = AttachmentUploadState.COMPLETED
+            )
+        )
+    }
+    FILE_TAG_RE.findAll(rawText).forEach { m ->
+        val name = m.groupValues[1].trim()
+        val path = m.groupValues[2].trim()
+        val sz = (m.groupValues[3].toLongOrNull() ?: 0L) * 1024L
+        list.add(
+            Attachment(
+                id = path,
+                type = AttachmentType.DOCUMENT,
+                fileName = name,
+                mimeType = "application/octet-stream",
+                size = sz,
+                remoteUrl = path,
+                serverId = path,
+                uploadState = AttachmentUploadState.COMPLETED
+            )
+        )
+    }
+    return list
+}
+
 fun cleanUserPromptText(rawText: String?): String {
     if (rawText.isNullOrBlank()) return ""
     var text = rawText
@@ -134,10 +216,16 @@ fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMe
 
             val rawUserText = step.userPrompt ?: step.content ?: ""
             val userText = cleanUserPromptText(rawUserText)
-            if (userText.isNotBlank() || step.attachments.isNotEmpty()) {
+            val parsedAttachments = if (step.attachments.isNotEmpty()) {
+                step.attachments
+            } else {
+                extractAttachmentsFromRawText(rawUserText)
+            }
+
+            if (userText.isNotBlank() || parsedAttachments.isNotEmpty()) {
                 val matchedPending = pendingMessages.find { pending ->
-                    if (pending.attachments.isNotEmpty() && step.attachments.isNotEmpty()) {
-                        step.attachments.any { sa ->
+                    if (pending.attachments.isNotEmpty() && parsedAttachments.isNotEmpty()) {
+                        parsedAttachments.any { sa ->
                             pending.attachments.any { pa ->
                                 sa.id == pa.id ||
                                 (pa.serverId != null && (pa.serverId == sa.id || pa.serverId == sa.remoteUrl)) ||
@@ -158,7 +246,7 @@ fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMe
                     ConversationBubble.User(
                         id = bubbleId,
                         text = userText,
-                        attachments = if (step.attachments.isNotEmpty()) step.attachments else (matchedPending?.attachments ?: emptyList()),
+                        attachments = if (parsedAttachments.isNotEmpty()) parsedAttachments else (matchedPending?.attachments ?: emptyList()),
                         status = MessageDeliveryStatus.DELIVERED
                     )
                 )
@@ -342,10 +430,8 @@ fun ChatScreen(
     val lastStep = steps.lastOrNull()
     val isActivityRunning = liveActivity != null && liveActivity?.activity != "idle"
     val isServerRunning = conversation?.status?.contains("RUNNING", ignoreCase = true) == true
-    val hasDelta = activeDeltaText.isNotEmpty()
     val isSending = pendingMessages.any { it.status == MessageDeliveryStatus.SENDING }
-    val isRunning = isActivityRunning || isServerRunning || hasDelta || isSending
-    val isLiveTurnVisible = (liveActivity != null && liveActivity?.activity != "idle") || hasDelta
+    val isRunning = isActivityRunning || isServerRunning || activeDeltaText.isNotEmpty() || isSending
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -381,10 +467,25 @@ fun ChatScreen(
         }
     }
 
+    val lastAgentBubble = displayedBubbles.lastOrNull() as? ConversationBubble.Agent
+    val hasFinalizedAgentText = !lastAgentBubble?.messageText.isNullOrBlank()
+
+    // Smooth streaming: preserve delta text until the finalized bubble actually renders its text
+    var preservedDeltaText by remember(conversation?.conversationId) { mutableStateOf("") }
+    if (activeDeltaText.isNotEmpty()) {
+        preservedDeltaText = activeDeltaText
+    } else if (hasFinalizedAgentText) {
+        preservedDeltaText = ""
+    }
+
+    val displayDeltaText = if (hasFinalizedAgentText) "" else (if (activeDeltaText.isNotEmpty()) activeDeltaText else preservedDeltaText)
+    val isLiveTurnVisible = (liveActivity != null && liveActivity?.activity != "idle") || displayDeltaText.isNotEmpty()
+
     var isInitialScrollDone by remember { mutableStateOf(false) }
 
     val hasEarlier = allBubbles.size > visibleLimit
     val totalItems = (if (hasEarlier) 1 else 0) + displayedBubbles.size + (if (isLiveTurnVisible) 1 else 0)
+    var previousTotalItems by remember { mutableIntStateOf(totalItems) }
 
     val lastBubble = displayedBubbles.lastOrNull()
     val bottomContentKey = remember(
@@ -393,25 +494,26 @@ fun ChatScreen(
         liveActivity?.activity,
         liveActivity?.detail,
         liveActivity?.parameters?.size,
-        activeDeltaText.length / 30
+        displayDeltaText.length / 30
     ) {
         when (lastBubble) {
             is ConversationBubble.Agent -> {
-                "${totalItems}_${lastBubble.stepIndex}_${lastBubble.diffs.size}_${lastBubble.toolCallsWithResults.size}_${lastBubble.messageText?.length ?: 0}_${liveActivity?.activity}_${liveActivity?.detail}_${activeDeltaText.length / 30}"
+                "${totalItems}_${lastBubble.stepIndex}_${lastBubble.diffs.size}_${lastBubble.toolCallsWithResults.size}_${lastBubble.messageText?.length ?: 0}_${liveActivity?.activity}_${liveActivity?.detail}_${displayDeltaText.length / 30}"
             }
             is ConversationBubble.User -> {
-                "${totalItems}_${lastBubble.id}_${lastBubble.status}_${liveActivity?.activity}_${activeDeltaText.length / 30}"
+                "${totalItems}_${lastBubble.id}_${lastBubble.status}_${liveActivity?.activity}_${displayDeltaText.length / 30}"
             }
             null -> "$totalItems"
         }
     }
 
-    // Instant jump to bottom on initial load, auto-scroll when new items arrive or bottom content expands (new diffs/tools/text)
+    // Instant jump to bottom on initial load, auto-scroll when new items arrive or live card expands
     LaunchedEffect(bottomContentKey) {
         if (totalItems > 0) {
             if (!isInitialScrollDone) {
                 listState.scrollToItem(totalItems - 1)
                 isInitialScrollDone = true
+                previousTotalItems = totalItems
                 return@LaunchedEffect
             }
 
@@ -424,23 +526,33 @@ fun ChatScreen(
             val lastVisibleIndex = visibleItems.last().index
             val totalCount = layoutInfo.totalItemsCount
 
+            val isNewItemAdded = totalItems > previousTotalItems
+            previousTotalItems = totalItems
+
             // Check if user was looking at the bottom area (within 2 items of bottom)
             val isUserAtBottom = lastVisibleIndex >= totalCount - 2
 
             if (isUserAtBottom) {
-                if (lastVisibleIndex < totalCount - 1) {
-                    listState.scrollToItem(totalCount - 1)
+                if (isNewItemAdded) {
+                    listState.animateScrollToItem(totalCount - 1)
                 }
 
-                // If the last item extends below the viewport bottom (e.g. new REPLACE card added),
-                // scroll down to fully reveal it above the composer
-                kotlinx.coroutines.delay(35)
-                val updatedLayout = listState.layoutInfo
-                val updatedLast = updatedLayout.visibleItemsInfo.lastOrNull()
-                if (updatedLast != null && updatedLast.index == totalCount - 1) {
-                    val overflow = (updatedLast.offset + updatedLast.size) - updatedLayout.viewportEndOffset
-                    if (overflow > 0) {
-                        listState.scrollBy(overflow.toFloat() + 24f)
+                // If live action / live tool / streaming card is running at the bottom,
+                // auto-follow its expansion so it stays visible above the composer.
+                // Never scroll past the top of the bubble when finalizing.
+                if (isLiveTurnVisible) {
+                    kotlinx.coroutines.delay(35)
+                    val updatedLayout = listState.layoutInfo
+                    val updatedLast = updatedLayout.visibleItemsInfo.lastOrNull()
+                    if (updatedLast != null && updatedLast.index == totalCount - 1) {
+                        val overflow = (updatedLast.offset + updatedLast.size) - updatedLayout.viewportEndOffset
+                        if (overflow > 0) {
+                            val maxAllowedScroll = if (updatedLast.offset > 0) updatedLast.offset.toFloat() else overflow.toFloat() + 24f
+                            val scrollAmount = minOf(overflow.toFloat() + 24f, maxAllowedScroll)
+                            if (scrollAmount > 0f) {
+                                listState.scrollBy(scrollAmount)
+                            }
+                        }
                     }
                 }
             }
@@ -453,15 +565,6 @@ fun ChatScreen(
     LaunchedEffect(imeBottom) {
         if (imeBottom > 0 && totalItems > 0) {
             listState.scrollToItem(totalItems - 1)
-            kotlinx.coroutines.delay(35)
-            val updatedLayout = listState.layoutInfo
-            val updatedLast = updatedLayout.visibleItemsInfo.lastOrNull()
-            if (updatedLast != null && updatedLast.index == totalItems - 1) {
-                val overflow = (updatedLast.offset + updatedLast.size) - updatedLayout.viewportEndOffset
-                if (overflow > 0) {
-                    listState.scrollBy(overflow.toFloat() + 24f)
-                }
-            }
         }
     }
 
@@ -666,7 +769,7 @@ fun ChatScreen(
                         item(key = "live_turn_card") {
                             LiveTurnCard(
                                 activity = liveActivity,
-                                deltaText = activeDeltaText,
+                                deltaText = displayDeltaText,
                                 onCancel = { viewModel.cancelRun() },
                                 onPreviewImage = { previewImageUrl = it; previewImageName = null },
                                 resolveServerUrl = { viewModel.getFileRawUrl(it) }

@@ -183,11 +183,6 @@ class SyncEngine(
                         error = payloadObj.optString("error").takeIf { it.isNotBlank() && it != "null" }
                     )
                     stepDao.insertOrUpdate(step)
-
-                    // Clear live delta once planner text is committed to database step
-                    if (step.type == "PLANNER_RESPONSE" && !step.content.isNullOrBlank()) {
-                        _liveDeltas.value = _liveDeltas.value - conversationId
-                    }
                 }
             }
 

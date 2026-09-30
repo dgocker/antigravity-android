@@ -175,11 +175,21 @@ class ChatRepository(
         val list = map[conversationId] ?: return
         if (list.isEmpty()) return
 
-        val filtered = list.filter { pending ->
+        // Mark pending messages as DELIVERED if server has started processing
+        val updatedList = list.map { pending ->
+            if (pending.status == MessageDeliveryStatus.SENDING || pending.status == MessageDeliveryStatus.SENT) {
+                val hasSubsequentSteps = currentSteps.any { it.stepIndex > pending.baseStepIndex }
+                if (hasSubsequentSteps) pending.copy(status = MessageDeliveryStatus.DELIVERED) else pending
+            } else {
+                pending
+            }
+        }
+
+        val filtered = updatedList.filter { pending ->
             val isMatched = currentSteps.any { step ->
                 if (step.stepIndex <= pending.baseStepIndex) return@any false
 
-                // 1. Direct match with a server user input step
+                // Direct match with a server user input step only
                 if (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
                     // Match by attachments if present
                     if (pending.attachments.isNotEmpty()) {
@@ -211,19 +221,12 @@ class ChatRepository(
                     }
                 }
 
-                // 2. If message was already SENT to server and any subsequent agent response or user step arrived
-                if (pending.status == MessageDeliveryStatus.SENT || pending.status == MessageDeliveryStatus.DELIVERED) {
-                    if (step.source == "MODEL" || step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
-                        return@any true
-                    }
-                }
-
                 false
             }
             !isMatched
         }
 
-        if (filtered.size != list.size) {
+        if (filtered != list) {
             map[conversationId] = filtered
             pendingMessagesFlow.value = map
         }
