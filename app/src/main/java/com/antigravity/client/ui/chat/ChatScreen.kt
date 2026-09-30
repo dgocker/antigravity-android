@@ -1498,7 +1498,7 @@ private fun LiveTurnCard(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             val isAskQuestion = activity != null && (
-                activity.tool_name == "ask_question" ||
+                activity.toolName == "ask_question" ||
                 activity.detail.contains("ask_question", ignoreCase = true) ||
                 activity.parameters.containsKey("questions") ||
                 activity.parameters.containsKey("question")

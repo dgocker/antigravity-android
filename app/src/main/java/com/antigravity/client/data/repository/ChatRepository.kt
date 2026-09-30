@@ -5,8 +5,10 @@ import com.antigravity.client.data.remote.GatewayApi
 import com.antigravity.client.data.remote.dto.*
 import com.antigravity.client.domain.model.*
 import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -456,15 +458,15 @@ class ChatRepository(
 
     suspend fun getArtifacts(conversationId: String): List<ArtifactDto> = withContext(Dispatchers.IO) {
         try {
-            networkClient.getApi().getArtifacts(conversationId)
+            api.getArtifacts(conversationId)
         } catch (e: Exception) {
-            emptyList()
+            emptyList<ArtifactDto>()
         }
     }
 
     suspend fun getTasks(conversationId: String): TasksResponseDto = withContext(Dispatchers.IO) {
         try {
-            networkClient.getApi().getTasks(conversationId)
+            api.getTasks(conversationId)
         } catch (e: Exception) {
             TasksResponseDto()
         }
@@ -472,7 +474,7 @@ class ChatRepository(
 
     suspend fun killTask(conversationId: String, taskId: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            networkClient.getApi().killTask(conversationId, taskId).isSuccessful
+            api.killTask(conversationId, taskId).isSuccessful
         } catch (e: Exception) {
             false
         }
@@ -480,15 +482,15 @@ class ChatRepository(
 
     suspend fun getSlashCommands(): List<SlashCommandDto> = withContext(Dispatchers.IO) {
         try {
-            networkClient.getApi().getSlashCommands()
+            api.getSlashCommands()
         } catch (e: Exception) {
-            emptyList()
+            emptyList<SlashCommandDto>()
         }
     }
 
     suspend fun getFileContent(path: String): String = withContext(Dispatchers.IO) {
         try {
-            networkClient.getApi().getFileContent(path).content
+            api.getFileContent(path).content
         } catch (e: Exception) {
             "Не удалось загрузить содержимое файла: ${e.message}"
         }

@@ -25,7 +25,7 @@ import com.antigravity.client.data.remote.dto.ArtifactDto
 import com.antigravity.client.data.remote.dto.SubagentDto
 import com.antigravity.client.data.remote.dto.TaskItemDto
 import com.antigravity.client.data.remote.dto.TasksResponseDto
-import com.antigravity.client.ui.components.AppIcons
+import com.antigravity.client.ui.theme.AppIcons
 import com.antigravity.client.ui.components.MarkdownText
 import com.antigravity.client.ui.theme.*
 
