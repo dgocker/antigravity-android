@@ -370,9 +370,9 @@ private fun parseMarkdownElements(markdown: String): List<MarkdownElement> {
 
 private fun buildAnnotatedMarkdown(raw: String, baseColor: Color): AnnotatedString {
     return buildAnnotatedString {
-        // Tokenizer for: [label](url), `code`, **bold**, *italic*, bare URLs (https?://...)
+        // Tokenizer for: **[label](url)**, [label](url), `code`, **bold**, *italic*, bare URLs (https?://...)
         val pattern = Regex(
-            """(\[(.*?)\]\((https?://[^\s)]+|file://[^\s)]+|/[^\s)]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(https?://[^\s]+)"""
+            """(\*\*\[(.*?)\]\(((?:https?://|file://|/)[^\s)]+)\)\*\*)|(\[(.*?)\]\(((?:https?://|file://|/)[^\s)]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(https?://[^\s]+)"""
         )
 
         var lastIdx = 0
@@ -383,10 +383,28 @@ private fun buildAnnotatedMarkdown(raw: String, baseColor: Color): AnnotatedStri
             }
 
             when {
-                // [label](url)
+                // **[label](url)** (bold link)
                 match.groups[1] != null -> {
                     val label = match.groups[2]?.value ?: ""
                     val url = match.groups[3]?.value ?: ""
+                    val start = length
+                    append(label)
+                    addStyle(
+                        SpanStyle(
+                            color = PrimaryBlue,
+                            fontWeight = FontWeight.Bold,
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        start,
+                        length
+                    )
+                    addStringAnnotation(tag = "URL", annotation = url, start = start, end = length)
+                }
+
+                // [label](url)
+                match.groups[4] != null -> {
+                    val label = match.groups[5]?.value ?: ""
+                    val url = match.groups[6]?.value ?: ""
                     val start = length
                     append(label)
                     addStyle(
@@ -402,8 +420,8 @@ private fun buildAnnotatedMarkdown(raw: String, baseColor: Color): AnnotatedStri
                 }
 
                 // `inline code`
-                match.groups[4] != null -> {
-                    val code = match.groups[5]?.value ?: ""
+                match.groups[7] != null -> {
+                    val code = match.groups[8]?.value ?: ""
                     val start = length
                     append(" $code ")
                     addStyle(
@@ -419,24 +437,42 @@ private fun buildAnnotatedMarkdown(raw: String, baseColor: Color): AnnotatedStri
                 }
 
                 // **bold**
-                match.groups[6] != null -> {
-                    val boldText = match.groups[7]?.value ?: ""
-                    val start = length
-                    append(boldText)
-                    addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, length)
+                match.groups[9] != null -> {
+                    val boldText = match.groups[10]?.value ?: ""
+                    val linkInsideBold = Regex("""^\[(.*?)\]\(((?:https?://|file://|/)[^\s)]+)\)$""").find(boldText.trim())
+                    if (linkInsideBold != null) {
+                        val label = linkInsideBold.groupValues[1]
+                        val url = linkInsideBold.groupValues[2]
+                        val start = length
+                        append(label)
+                        addStyle(
+                            SpanStyle(
+                                color = PrimaryBlue,
+                                fontWeight = FontWeight.Bold,
+                                textDecoration = TextDecoration.Underline
+                            ),
+                            start,
+                            length
+                        )
+                        addStringAnnotation(tag = "URL", annotation = url, start = start, end = length)
+                    } else {
+                        val start = length
+                        append(boldText)
+                        addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, length)
+                    }
                 }
 
                 // *italic*
-                match.groups[8] != null -> {
-                    val italicText = match.groups[9]?.value ?: ""
+                match.groups[11] != null -> {
+                    val italicText = match.groups[12]?.value ?: ""
                     val start = length
                     append(italicText)
                     addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, length)
                 }
 
                 // Bare URL
-                match.groups[10] != null -> {
-                    val url = match.groups[10]?.value ?: ""
+                match.groups[13] != null -> {
+                    val url = match.groups[13]?.value ?: ""
                     val start = length
                     append(url)
                     addStyle(

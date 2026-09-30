@@ -520,11 +520,34 @@ class ChatViewModel(
         if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
             baseUrl = "http://$baseUrl"
         }
-        val cleanPath = filePath.removePrefix("file://")
-        val encodedPath = java.net.URLEncoder.encode(cleanPath, "UTF-8")
-        val downloadUrl = "$baseUrl/v1/files/raw?path=$encodedPath&download=true&token=$token"
-        val fileName = customFilename ?: cleanPath.substringAfterLast('/').ifEmpty { "downloaded_file" }
 
+        val downloadUrl: String
+        val resolvedFileName: String
+
+        if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+            // Already a full URL (e.g. from ImagePreviewDialog or remote link)
+            val uri = android.net.Uri.parse(filePath)
+            val pathParam = uri.getQueryParameter("path")
+            val targetPath = pathParam ?: uri.lastPathSegment ?: "downloaded_file"
+            resolvedFileName = customFilename
+                ?: targetPath.substringAfterLast('/').substringBefore('?').ifEmpty { "downloaded_file" }
+
+            val builder = uri.buildUpon()
+            if (uri.getQueryParameter("download") == null) {
+                builder.appendQueryParameter("download", "true")
+            }
+            if (uri.getQueryParameter("token") == null) {
+                builder.appendQueryParameter("token", token)
+            }
+            downloadUrl = builder.build().toString()
+        } else {
+            val cleanPath = filePath.removePrefix("file://").trim().trimEnd('.', ',', ';')
+            val encodedPath = java.net.URLEncoder.encode(cleanPath, "UTF-8")
+            downloadUrl = "$baseUrl/v1/files/raw?path=$encodedPath&download=true&token=$token"
+            resolvedFileName = customFilename ?: cleanPath.substringAfterLast('/').ifEmpty { "downloaded_file" }
+        }
+
+        val fileName = resolvedFileName.substringBefore('?').substringBefore('&').ifEmpty { "downloaded_file" }
         android.widget.Toast.makeText(context, "Скачивание начато: $fileName", android.widget.Toast.LENGTH_SHORT).show()
 
         viewModelScope.launch(Dispatchers.IO) {

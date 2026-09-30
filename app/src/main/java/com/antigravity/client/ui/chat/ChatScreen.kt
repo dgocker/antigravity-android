@@ -267,6 +267,7 @@ fun ChatScreen(
     val pendingAttachments by viewModel.pendingAttachments.collectAsStateWithLifecycle()
 
     var previewImageUrl by remember { mutableStateOf<String?>(null) }
+    var previewImageName by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
 
     // Attachment pickers
@@ -393,7 +394,8 @@ fun ChatScreen(
                 isInitialScrollDone = true
             } else if (totalItems > previousTotalItems) {
                 val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                if (lastVisible >= previousTotalItems - 2) {
+                val wasNearBottom = lastVisible >= previousTotalItems - 2
+                if (wasNearBottom && !listState.isScrollInProgress) {
                     listState.animateScrollToItem(totalItems - 1)
                 }
             }
@@ -589,13 +591,19 @@ fun ChatScreen(
                                 bubble = bubble,
                                 audioPlayer = viewModel.audioPlayer,
                                 resolveServerUrl = { viewModel.getFileRawUrl(it) },
-                                onPreviewImage = { previewImageUrl = it },
+                                onPreviewImage = { url, name ->
+                                    previewImageUrl = url
+                                    previewImageName = name
+                                },
                                 onRetry = { viewModel.retryPendingMessage(bubble.id) }
                             )
                             is ConversationBubble.Agent -> AgentBubble(
                                 bubble = bubble,
                                 viewModel = viewModel,
-                                onPreviewImage = { previewImageUrl = it }
+                                onPreviewImage = { url, name ->
+                                    previewImageUrl = url
+                                    previewImageName = name
+                                }
                             )
                         }
                     }
@@ -607,7 +615,7 @@ fun ChatScreen(
                                 activity = liveActivity,
                                 deltaText = activeDeltaText,
                                 onCancel = { viewModel.cancelRun() },
-                                onPreviewImage = { previewImageUrl = it },
+                                onPreviewImage = { previewImageUrl = it; previewImageName = null },
                                 resolveServerUrl = { viewModel.getFileRawUrl(it) }
                             )
                         }
@@ -621,22 +629,8 @@ fun ChatScreen(
                 onTextChange = { viewModel.inputMessage.value = it },
                 attachments = pendingAttachments,
                 onRemoveAttachment = { viewModel.removePendingAttachment(it) },
-                onSend = {
-                    viewModel.sendMessage()
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(60)
-                        val count = listState.layoutInfo.totalItemsCount
-                        if (count > 0) listState.scrollToItem(count - 1)
-                    }
-                },
-                onVoiceRecorded = {
-                    viewModel.attachVoiceNote(it)
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(60)
-                        val count = listState.layoutInfo.totalItemsCount
-                        if (count > 0) listState.scrollToItem(count - 1)
-                    }
-                },
+                onSend = { viewModel.sendMessage() },
+                onVoiceRecorded = { viewModel.attachVoiceNote(it) },
                 onPickCamera = { launchCamera() },
                 onPickGallery = { galleryLauncher.launch("image/*") },
                 onPickFile = { fileLauncher.launch(arrayOf("*/*")) },
@@ -650,8 +644,11 @@ fun ChatScreen(
     previewImageUrl?.let { url ->
         ImagePreviewDialog(
             imageUrl = url,
-            onDismiss = { previewImageUrl = null },
-            onDownload = { viewModel.downloadFile(context, url) }
+            onDismiss = {
+                previewImageUrl = null
+                previewImageName = null
+            },
+            onDownload = { viewModel.downloadFile(context, url, previewImageName) }
         )
     }
 }
@@ -661,7 +658,7 @@ private fun UserBubble(
     bubble: ConversationBubble.User,
     audioPlayer: AudioPlayer,
     resolveServerUrl: (String) -> String,
-    onPreviewImage: (String) -> Unit,
+    onPreviewImage: (String, String?) -> Unit,
     onRetry: () -> Unit
 ) {
     Row(
@@ -697,7 +694,7 @@ private fun UserBubble(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(DarkSurfaceVariant)
                                         .clickable {
-                                            imgModel?.let { onPreviewImage(it) }
+                                            imgModel?.let { onPreviewImage(it, att.fileName) }
                                         }
                                 ) {
                                     coil.compose.AsyncImage(
@@ -883,7 +880,7 @@ fun extractAttachmentsFromBubble(bubble: ConversationBubble.Agent): List<FileAtt
 private fun AgentBubble(
     bubble: ConversationBubble.Agent,
     viewModel: ChatViewModel,
-    onPreviewImage: (String) -> Unit
+    onPreviewImage: (String, String?) -> Unit
 ) {
     val context = LocalContext.current
     Column(
@@ -1039,7 +1036,7 @@ private fun AgentBubble(
                         ImageAttachmentCard(
                             file = file,
                             imageUrl = viewModel.getFileRawUrl(file.path),
-                            onPreviewImage = onPreviewImage,
+                            onPreviewImage = { url -> onPreviewImage(url, file.name) },
                             onDownload = { viewModel.downloadFile(context, file.path, file.name) }
                         )
                     } else {
@@ -1053,10 +1050,28 @@ private fun AgentBubble(
         }
 
         // Clean Agent Response Text with rich Markdown, clickable links, code blocks, and photos
-        if (!bubble.messageText.isNullOrBlank()) {
+        // Deduplicate images if already rendered in attachments
+        val displayedMarkdown = remember(bubble.messageText, attachments) {
+            val text = bubble.messageText ?: return@remember ""
+            val imgPathsOrNames = attachments.filter { it.isImage }.flatMap { listOf(it.name, it.path) }.toSet()
+            if (imgPathsOrNames.isEmpty()) {
+                text
+            } else {
+                text.lines().filterNot { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.startsWith("![") && trimmed.endsWith(")")) {
+                        imgPathsOrNames.any { imgId -> trimmed.contains(imgId) }
+                    } else {
+                        false
+                    }
+                }.joinToString("\n")
+            }
+        }
+
+        if (displayedMarkdown.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             MarkdownText(
-                markdown = bubble.messageText,
+                markdown = displayedMarkdown,
                 textColor = TextPrimary,
                 onLinkClick = { url ->
                     if (url.startsWith("file://") || url.startsWith("/")) {
@@ -1072,7 +1087,7 @@ private fun AgentBubble(
                         }
                     }
                 },
-                onImageClick = onPreviewImage,
+                onImageClick = { onPreviewImage(it, null) },
                 resolveServerUrl = { viewModel.getFileRawUrl(it) }
             )
         }

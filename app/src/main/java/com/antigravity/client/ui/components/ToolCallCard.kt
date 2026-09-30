@@ -81,21 +81,19 @@ fun ToolCallCard(
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = FontFamily.Monospace
                     )
-                    // If target file or command is in args, show inline summary
-                    val targetSummary = (toolCall.args["TargetFile"] as? String)
-                        ?: (toolCall.args["AbsolutePath"] as? String)
-                        ?: (toolCall.args["CommandLine"] as? String)
+                    val toolSummaryText = (toolCall.args["toolSummary"] as? String)
+                        ?: (toolCall.args["toolAction"] as? String)
+                        ?: (toolCall.args["TargetFile"] as? String)?.substringAfterLast('/')
+                        ?: (toolCall.args["AbsolutePath"] as? String)?.substringAfterLast('/')
                         ?: (toolCall.args["query"] as? String)
-
-                    if (!targetSummary.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        val cleanSummary = if (targetSummary.contains('/')) {
-                            targetSummary.substringAfterLast('/')
-                        } else {
-                            targetSummary
+                        ?: (toolCall.args["CommandLine"] as? String)?.let { cmd ->
+                            cmd.lines().firstOrNull()?.trim()?.take(50)
                         }
+
+                    if (!toolSummaryText.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = cleanSummary,
+                            text = toolSummaryText,
                             color = TextSecondary,
                             fontSize = 12.sp,
                             maxLines = 1,
