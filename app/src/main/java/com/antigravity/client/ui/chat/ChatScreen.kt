@@ -38,6 +38,7 @@ import com.antigravity.client.audio.AudioPlayer
 import com.antigravity.client.domain.model.*
 import com.antigravity.client.ui.components.*
 import com.antigravity.client.ui.theme.*
+import kotlinx.coroutines.launch
 
 sealed class ConversationBubble(val key: String) {
     data class User(
