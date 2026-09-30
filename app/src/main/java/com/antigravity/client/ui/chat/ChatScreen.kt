@@ -182,9 +182,25 @@ fun cleanUserPromptText(rawText: String?): String {
     return text.trim()
 }
 
-fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMessage> = emptyList()): List<ConversationBubble> {
+fun processStepsToBubbles(
+    steps: List<Step>,
+    pendingMessages: List<PendingUserMessage> = emptyList(),
+    liveTranscriptions: Map<String, String> = emptyMap()
+): List<ConversationBubble> {
     val bubbles = mutableListOf<ConversationBubble>()
     var currentAgent: ConversationBubble.Agent? = null
+
+    fun resolveTranscription(att: Attachment): Attachment {
+        if (att.type == AttachmentType.AUDIO && att.transcription.isNullOrBlank()) {
+            val trans = liveTranscriptions[att.serverId]
+                ?: liveTranscriptions[att.remoteUrl]
+                ?: liveTranscriptions[att.id]
+                ?: (if (att.remoteUrl != null) liveTranscriptions[att.remoteUrl.substringAfterLast('/')] else null)
+                ?: liveTranscriptions[att.fileName]
+            if (!trans.isNullOrBlank()) return att.copy(transcription = trans)
+        }
+        return att
+    }
 
     fun linkAgentTranscriptionToUserBubble(agent: ConversationBubble.Agent) {
         val agentText = agent.messageText ?: return
@@ -246,12 +262,14 @@ fun processStepsToBubbles(steps: List<Step>, pendingMessages: List<PendingUserMe
                 }
 
                 val bubbleId = matchedPending?.id ?: "${step.conversationId}_${step.stepIndex}"
+                val rawAtts = if (parsedAttachments.isNotEmpty()) parsedAttachments else (matchedPending?.attachments ?: emptyList())
+                val finalAttachments = rawAtts.map { resolveTranscription(it) }
 
                 bubbles.add(
                     ConversationBubble.User(
                         id = bubbleId,
                         text = userText,
-                        attachments = if (parsedAttachments.isNotEmpty()) parsedAttachments else (matchedPending?.attachments ?: emptyList()),
+                        attachments = finalAttachments,
                         status = MessageDeliveryStatus.DELIVERED
                     )
                 )
@@ -348,6 +366,7 @@ fun ChatScreen(
     val steps by viewModel.steps.collectAsStateWithLifecycle()
     val pendingMessages by viewModel.pendingMessages.collectAsStateWithLifecycle()
     val activeDeltaText by viewModel.activeDeltaText.collectAsStateWithLifecycle()
+    val liveTranscriptions by viewModel.liveTranscriptions.collectAsStateWithLifecycle()
     val liveActivity by viewModel.liveActivity.collectAsStateWithLifecycle()
     val connectionStatus by viewModel.connectionStatus.collectAsStateWithLifecycle()
     val inputMessage by viewModel.inputMessage.collectAsStateWithLifecycle()
@@ -493,18 +512,30 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
 
     // Combine confirmed steps with optimistic pending messages (instant appearance with stable keys!)
-    val allBubbles = remember(steps, pendingMessages) {
-        val list = processStepsToBubbles(steps, pendingMessages).toMutableList()
+    val allBubbles = remember(steps, pendingMessages, liveTranscriptions) {
+        val list = processStepsToBubbles(steps, pendingMessages, liveTranscriptions).toMutableList()
         val processedIds = list.filterIsInstance<ConversationBubble.User>().map { it.id }.toSet()
         for (pending in pendingMessages) {
             if (pending.id !in processedIds) {
                 val userText = cleanUserPromptText(pending.text)
-                if (userText.isNotBlank() || pending.attachments.isNotEmpty()) {
+                val resolvedPendingAttachments = pending.attachments.map { att ->
+                    if (att.type == AttachmentType.AUDIO && att.transcription.isNullOrBlank()) {
+                        val trans = liveTranscriptions[att.serverId]
+                            ?: liveTranscriptions[att.remoteUrl]
+                            ?: liveTranscriptions[att.id]
+                            ?: (if (att.remoteUrl != null) liveTranscriptions[att.remoteUrl.substringAfterLast('/')] else null)
+                            ?: liveTranscriptions[att.fileName]
+                        if (!trans.isNullOrBlank()) att.copy(transcription = trans) else att
+                    } else {
+                        att
+                    }
+                }
+                if (userText.isNotBlank() || resolvedPendingAttachments.isNotEmpty()) {
                     list.add(
                         ConversationBubble.User(
                             id = pending.id,
                             text = userText,
-                            attachments = pending.attachments,
+                            attachments = resolvedPendingAttachments,
                             status = pending.status
                         )
                     )

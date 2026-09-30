@@ -363,3 +363,20 @@ def update_attachment_conversation(attachment_id: str, conversation_id: str) -> 
             (conversation_id, attachment_id),
         )
         conn.commit()
+
+def update_attachment_transcription(identifier: str, transcription: str) -> Optional[dict[str, Any]]:
+    with _db_lock, get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE attachments
+            SET transcription = ?
+            WHERE id = ? OR storage_path = ? OR file_name = ?
+            RETURNING id, conversation_id, file_name, storage_path, mime_type, size, duration, transcription, created_at
+            """,
+            (transcription, identifier, identifier, identifier),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+

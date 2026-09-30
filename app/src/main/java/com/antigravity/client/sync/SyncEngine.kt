@@ -27,10 +27,15 @@ class SyncEngine(
     private val conversationDao = database.conversationDao()
     private val runDao = database.runDao()
     private val syncStateDao = database.syncStateDao()
+    private val attachmentDao = database.attachmentDao()
 
     // In-memory accumulator for live text_delta per conversation
     private val _liveDeltas = MutableStateFlow<Map<String, String>>(emptyMap())
     val liveDeltas: StateFlow<Map<String, String>> = _liveDeltas.asStateFlow()
+
+    // In-memory live transcriptions keyed by attachment ID or server path
+    private val _liveTranscriptions = MutableStateFlow<Map<String, String>>(emptyMap())
+    val liveTranscriptions: StateFlow<Map<String, String>> = _liveTranscriptions.asStateFlow()
 
     // In-memory state for live agent activity (thinking, tool execution, generation) per conversation
     private val _liveActivity = MutableStateFlow<Map<String, LiveActivity>>(emptyMap())
@@ -128,6 +133,23 @@ class SyncEngine(
                 if (conversationId.isNotBlank() && delta.isNotEmpty()) {
                     val current = _liveDeltas.value[conversationId] ?: ""
                     _liveDeltas.value = _liveDeltas.value + (conversationId to (current + delta))
+                }
+            }
+
+            "attachment_transcription" -> {
+                val attId = json.optString("attachment_id")
+                val serverPath = json.optString("server_path")
+                val trans = json.optString("transcription")
+                if (trans.isNotBlank()) {
+                    val map = _liveTranscriptions.value.toMutableMap()
+                    if (attId.isNotBlank()) map[attId] = trans
+                    if (serverPath.isNotBlank()) map[serverPath] = trans
+                    _liveTranscriptions.value = map
+
+                    scope.launch {
+                        if (attId.isNotBlank()) attachmentDao.updateTranscription(attId, trans)
+                        if (serverPath.isNotBlank()) attachmentDao.updateTranscription(serverPath, trans)
+                    }
                 }
             }
 

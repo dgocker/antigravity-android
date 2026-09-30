@@ -198,3 +198,16 @@ class GenericItem(BaseModel):
     description: str
     category: Optional[str] = None
 
+class UpdateTranscriptionRequest(BaseModel):
+    attachment_id: Optional[str] = None
+    path: Optional[str] = None
+    transcription: str
+    conversation_id: Optional[str] = None
+
+class UpdateTranscriptionResponse(BaseModel):
+    status: str = "ok"
+    attachment_id: Optional[str] = None
+    server_path: Optional[str] = None
+    transcription: str
+    conversation_id: Optional[str] = None
+

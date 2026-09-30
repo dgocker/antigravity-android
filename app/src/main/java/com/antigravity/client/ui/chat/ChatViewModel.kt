@@ -96,6 +96,9 @@ class ChatViewModel(
         .map { it[conversationId] }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    // Live transcriptions pushed by gateway/agent
+    val liveTranscriptions: StateFlow<Map<String, String>> = syncEngine.liveTranscriptions
+
     val quotedSnippet = MutableStateFlow<String?>(null)
     val inputMessage = MutableStateFlow("")
     val pendingAttachments = MutableStateFlow<List<Attachment>>(emptyList())

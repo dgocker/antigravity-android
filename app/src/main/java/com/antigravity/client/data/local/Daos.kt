@@ -683,7 +683,7 @@ class AttachmentDaoImpl(private val dbHelper: AppDatabase) : AttachmentDao {
         val cv = ContentValues().apply {
             put("transcription", transcription)
         }
-        db.update("attachments", cv, "id = ?", arrayOf(id))
+        db.update("attachments", cv, "id = ? OR serverId = ? OR remoteUrl = ?", arrayOf(id, id, id))
         notifyChange()
     }
 

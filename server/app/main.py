@@ -26,9 +26,11 @@ from app.db import (
     get_events,
     init_db,
     list_device_tokens,
+    log_event,
     reconcile_startup_runs,
     revoke_device_token,
     update_attachment_conversation,
+    update_attachment_transcription,
 )
 from app.files import (
     DirectoryListResponse,
@@ -38,7 +40,7 @@ from app.files import (
     read_file_content,
     validate_path_access,
 )
-from app.hub import handle_websocket_connection
+from app.hub import handle_websocket_connection, hub
 from app.models import (
     AttachmentRef,
     AttachmentUploadResponse,
@@ -64,6 +66,8 @@ from app.models import (
     RenameChatRequest,
     ContextResponse,
     GenericItem,
+    UpdateTranscriptionRequest,
+    UpdateTranscriptionResponse,
 )
 from app.queue import task_queue
 from app.runner import cancel_active_run, get_transcript_path
@@ -271,6 +275,59 @@ async def get_attachment_file(
         )
 
     return serve_attachment(id, download=download)
+
+# 3.3 Update Attachment Transcription
+@app.post("/v1/attachments/transcription", response_model=UpdateTranscriptionResponse)
+async def update_transcription_endpoint(
+    req: UpdateTranscriptionRequest,
+    authorization: Optional[str] = Header(None),
+):
+    # Allow local calls without token, or verify bearer token if provided
+    auth_token = None
+    if authorization:
+        parts = authorization.strip().split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            auth_token = parts[1]
+
+    if auth_token and not verify_token(auth_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    target_id = req.attachment_id or req.path
+    if not target_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="attachment_id or path is required"
+        )
+
+    rec = update_attachment_transcription(target_id, req.transcription)
+    conv_id = req.conversation_id or (rec.get("conversation_id") if rec else None)
+    att_id = rec.get("id") if rec else req.attachment_id
+    storage_path = rec.get("storage_path") if rec else req.path
+
+    event_payload = {
+        "type": "attachment_transcription",
+        "conversation_id": conv_id,
+        "attachment_id": att_id,
+        "server_path": storage_path,
+        "transcription": req.transcription,
+    }
+    await hub.broadcast_live(event_payload)
+    if conv_id:
+        log_event(conv_id, "transcription", "attachment_transcription", event_payload)
+
+    logger.info(f"Updated transcription for {target_id} (conv={conv_id}): '{req.transcription[:50]}...'")
+
+    return UpdateTranscriptionResponse(
+        status="ok",
+        attachment_id=att_id,
+        server_path=storage_path,
+        transcription=req.transcription,
+        conversation_id=conv_id,
+    )
 
 # 4. Create new chat
 @app.post("/v1/chats", response_model=CreateChatResponse, dependencies=[Depends(require_auth)])

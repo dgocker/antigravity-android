@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any, Optional
+from app.db import get_attachment
 from app.models import AttachmentRef, CodeDiff, NormalizedStep, ToolCall
 
 USER_REQUEST_RE = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.DOTALL)
@@ -136,6 +137,13 @@ def parse_transcript_line_to_step(raw_line: str) -> Optional[NormalizedStep]:
                 mime = match.group("mime")
                 dur = int(match.group("dur")) if match.group("dur") else None
                 trans = match.group("trans")
+                if not trans:
+                    try:
+                        rec = get_attachment(p)
+                        if rec and rec.get("transcription"):
+                            trans = rec["transcription"]
+                    except Exception:
+                        pass
                 attachments.append(AttachmentRef(
                     id=p,
                     type="audio",
