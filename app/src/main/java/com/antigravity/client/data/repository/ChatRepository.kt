@@ -173,14 +173,56 @@ class ChatRepository(
     fun reconcilePendingMessages(conversationId: String, currentSteps: List<Step>) {
         val map = pendingMessagesFlow.value.toMutableMap()
         val list = map[conversationId] ?: return
+        if (list.isEmpty()) return
+
         val filtered = list.filter { pending ->
-            val matching = currentSteps.any { step ->
-                step.stepIndex > pending.baseStepIndex &&
-                (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") &&
-                (step.userPrompt?.trim() == pending.text.trim() || step.content?.trim() == pending.text.trim())
+            val isMatched = currentSteps.any { step ->
+                if (step.stepIndex <= pending.baseStepIndex) return@any false
+
+                // 1. Direct match with a server user input step
+                if (step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
+                    // Match by attachments if present
+                    if (pending.attachments.isNotEmpty()) {
+                        val attMatch = step.attachments.any { sa ->
+                            pending.attachments.any { pa ->
+                                sa.id == pa.id ||
+                                (pa.serverId != null && (pa.serverId == sa.id || pa.serverId == sa.remoteUrl)) ||
+                                (sa.remoteUrl != null && (sa.remoteUrl == pa.remoteUrl || sa.remoteUrl == pa.localUri)) ||
+                                (sa.fileName == pa.fileName && (pa.size == 0L || sa.size == 0L || sa.size == pa.size))
+                            }
+                        }
+                        if (attMatch) return@any true
+                        // If pending only had attachments and user step has attachments
+                        if (pending.text.isBlank() && step.attachments.isNotEmpty()) return@any true
+                    }
+
+                    // Match by text
+                    val stepUserPrompt = (step.userPrompt ?: "").trim()
+                    val stepContent = (step.content ?: "").trim()
+                    val pendingText = pending.text.trim()
+                    if (pendingText.isNotBlank()) {
+                        if (stepUserPrompt == pendingText ||
+                            stepContent == pendingText ||
+                            stepContent.contains(pendingText) ||
+                            stepUserPrompt.contains(pendingText)
+                        ) return@any true
+                    } else if (pending.attachments.isEmpty() && stepUserPrompt.isBlank()) {
+                        return@any true
+                    }
+                }
+
+                // 2. If message was already SENT to server and any subsequent agent response or user step arrived
+                if (pending.status == MessageDeliveryStatus.SENT || pending.status == MessageDeliveryStatus.DELIVERED) {
+                    if (step.source == "MODEL" || step.source == "USER_EXPLICIT" || step.type == "USER_INPUT") {
+                        return@any true
+                    }
+                }
+
+                false
             }
-            !matching
+            !isMatched
         }
+
         if (filtered.size != list.size) {
             map[conversationId] = filtered
             pendingMessagesFlow.value = map

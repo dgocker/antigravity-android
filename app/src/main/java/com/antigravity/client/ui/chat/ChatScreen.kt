@@ -525,6 +525,7 @@ fun ChatScreen(
                             is ConversationBubble.User -> UserBubble(
                                 bubble = bubble,
                                 audioPlayer = viewModel.audioPlayer,
+                                resolveServerUrl = { viewModel.getFileRawUrl(it) },
                                 onPreviewImage = { previewImageUrl = it },
                                 onRetry = { viewModel.retryPendingMessage(bubble.id) }
                             )
@@ -582,6 +583,7 @@ fun ChatScreen(
 private fun UserBubble(
     bubble: ConversationBubble.User,
     audioPlayer: AudioPlayer,
+    resolveServerUrl: (String) -> String,
     onPreviewImage: (String) -> Unit,
     onRetry: () -> Unit
 ) {
@@ -604,11 +606,12 @@ private fun UserBubble(
                                     attachment = att,
                                     audioPlayer = audioPlayer,
                                     isUser = true,
-                                    modifier = Modifier.padding(bottom = 6.dp)
+                                    modifier = Modifier.padding(bottom = 6.dp),
+                                    resolveServerUrl = resolveServerUrl
                                 )
                             }
                             AttachmentType.IMAGE -> {
-                                val imgModel = att.localUri ?: att.remoteUrl
+                                val imgModel = att.localUri ?: att.remoteUrl?.let { if (it.startsWith("http")) it else resolveServerUrl(it) }
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()

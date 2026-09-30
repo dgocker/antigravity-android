@@ -28,10 +28,25 @@ fun VoiceMessageCard(
     attachment: Attachment,
     audioPlayer: AudioPlayer,
     isUser: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    resolveServerUrl: ((String) -> String)? = null
 ) {
     val playbackState by audioPlayer.playbackState.collectAsState()
-    val mediaUrl = attachment.localUri ?: attachment.remoteUrl ?: ""
+    val mediaUrl = remember(attachment) {
+        val local = attachment.localUri
+        if (!local.isNullOrBlank() && (local.startsWith("content://") || java.io.File(local).exists())) {
+            local
+        } else {
+            val remote = attachment.remoteUrl ?: ""
+            if (remote.startsWith("http://") || remote.startsWith("https://")) {
+                remote
+            } else if (remote.isNotEmpty() && resolveServerUrl != null) {
+                resolveServerUrl(remote)
+            } else {
+                remote
+            }
+        }
+    }
     val isCurrentAudio = playbackState.urlOrPath == mediaUrl
     val isPlaying = isCurrentAudio && playbackState.isPlaying
 
