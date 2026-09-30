@@ -40,7 +40,13 @@ class AntigravityApp : Application() {
             database = AppDatabase.getInstance(this)
             chatRepository = ChatRepository(networkClient.getApi(), database)
             fileRepository = FileRepository(networkClient.getApi(), database)
-            syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
+            syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient) { convId ->
+                try {
+                    chatRepository.fetchStepsHistory(convId)
+                } catch (e: Exception) {
+                    Log.w("AntigravityApp", "Sync error on turn finish: ${e.message}")
+                }
+            }
 
             if (tokenStore.hasToken()) {
                 syncEngine.start()
@@ -59,7 +65,13 @@ class AntigravityApp : Application() {
             if (::database.isInitialized) {
                 chatRepository = ChatRepository(networkClient.getApi(), database)
                 fileRepository = FileRepository(networkClient.getApi(), database)
-                syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient)
+                syncEngine = SyncEngine(database, tokenStore, networkClient.okHttpClient) { convId ->
+                    try {
+                        chatRepository.fetchStepsHistory(convId)
+                    } catch (e: Exception) {
+                        Log.w("AntigravityApp", "Sync error on turn finish: ${e.message}")
+                    }
+                }
                 syncEngine.start()
             }
         } catch (e: Throwable) {

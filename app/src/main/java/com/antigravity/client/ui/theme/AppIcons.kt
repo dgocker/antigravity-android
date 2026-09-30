@@ -355,4 +355,58 @@ object AppIcons {
             close()
         }
     }.build()
+
+    val Download: ImageVector = ImageVector.Builder(
+        name = "Download",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(19f, 9f)
+            horizontalLineToRelative(-4f)
+            verticalLineTo(3f)
+            horizontalLineTo(9f)
+            verticalLineToRelative(6f)
+            horizontalLineTo(5f)
+            lineToRelative(7f, 7f)
+            lineToRelative(7f, -7f)
+            close()
+            moveTo(5f, 18f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(14f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(5f)
+            close()
+        }
+    }.build()
+
+    val Image: ImageVector = ImageVector.Builder(
+        name = "Image",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(21f, 19f)
+            verticalLineTo(5f)
+            curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+            horizontalLineTo(5f)
+            curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+            verticalLineToRelative(14f)
+            curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+            horizontalLineToRelative(14f)
+            curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+            close()
+            moveTo(8.5f, 13.5f)
+            lineToRelative(2.5f, 3.01f)
+            lineToRelative(3.5f, -4.51f)
+            lineToRelative(4.5f, 6f)
+            horizontalLineTo(5f)
+            lineToRelative(3.5f, -4.5f)
+            close()
+        }
+    }.build()
 }

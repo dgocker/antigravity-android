@@ -11,8 +11,8 @@ android {
         applicationId = "com.antigravity.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.0.12"
+        versionCode = 13
+        versionName = "1.0.13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -75,6 +75,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.gson)
+    implementation(libs.coil.compose)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)

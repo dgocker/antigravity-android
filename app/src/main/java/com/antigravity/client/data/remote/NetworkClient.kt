@@ -40,6 +40,7 @@ class NetworkClient(private val tokenStore: TokenStore) {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // Indefinite read timeout for streaming & WS
         .writeTimeout(30, TimeUnit.SECONDS)
+        .pingInterval(15, TimeUnit.SECONDS) // Persistent WS keepalive
         .retryOnConnectionFailure(true)
         .build()
 

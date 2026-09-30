@@ -2,6 +2,7 @@ package com.antigravity.client.sync
 
 import com.antigravity.client.data.local.*
 import com.antigravity.client.domain.model.ConnectionStatus
+import com.antigravity.client.domain.model.LiveActivity
 import com.antigravity.client.security.TokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,8 @@ import org.json.JSONObject
 class SyncEngine(
     private val database: AppDatabase,
     private val tokenStore: TokenStore,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    var onSyncRequired: (suspend (String) -> Unit)? = null
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val eventDao = database.eventDao()
@@ -28,6 +30,10 @@ class SyncEngine(
     // In-memory accumulator for live text_delta per conversation
     private val _liveDeltas = MutableStateFlow<Map<String, String>>(emptyMap())
     val liveDeltas: StateFlow<Map<String, String>> = _liveDeltas.asStateFlow()
+
+    // In-memory state for live agent activity (thinking, tool execution, generation) per conversation
+    private val _liveActivity = MutableStateFlow<Map<String, LiveActivity>>(emptyMap())
+    val liveActivity: StateFlow<Map<String, LiveActivity>> = _liveActivity.asStateFlow()
 
     private val webSocketManager = WebSocketManager(
         client = okHttpClient,
@@ -79,6 +85,39 @@ class SyncEngine(
 
         // 2. Process event semantics
         when (type) {
+            "agent_activity" -> {
+                val act = json.optString("activity", "idle")
+                val toolName = json.optString("tool_name").takeIf { it.isNotBlank() }
+                val detail = json.optString("detail", "")
+                val paramsObj = json.optJSONObject("parameters")
+                val paramsMap = mutableMapOf<String, Any?>()
+                if (paramsObj != null) {
+                    val keys = paramsObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        paramsMap[k] = paramsObj.opt(k)
+                    }
+                }
+                val output = json.optString("output").takeIf { it.isNotBlank() }
+                val dur = if (json.has("duration_seconds")) json.optDouble("duration_seconds") else null
+
+                if (conversationId.isNotBlank()) {
+                    if (act == "idle") {
+                        _liveActivity.value = _liveActivity.value - conversationId
+                    } else {
+                        val activityInfo = LiveActivity(
+                            activity = act,
+                            toolName = toolName,
+                            detail = detail,
+                            parameters = paramsMap,
+                            output = output,
+                            durationSeconds = dur
+                        )
+                        _liveActivity.value = _liveActivity.value + (conversationId to activityInfo)
+                    }
+                }
+            }
+
             "text_delta" -> {
                 val delta = json.optString("text_delta")
                 if (conversationId.isNotBlank() && delta.isNotEmpty()) {
@@ -111,8 +150,10 @@ class SyncEngine(
                     // Clear live delta and mark IDLE for finished planner step
                     if (step.type == "PLANNER_RESPONSE" && step.status == "DONE") {
                         _liveDeltas.value = _liveDeltas.value - conversationId
+                        _liveActivity.value = _liveActivity.value - conversationId
                         if (conversationId.isNotBlank()) {
                             conversationDao.updateStatus(conversationId, "CASCADE_RUN_STATUS_IDLE")
+                            scope.launch { onSyncRequired?.invoke(conversationId) }
                         }
                     }
                 }
@@ -143,6 +184,8 @@ class SyncEngine(
                 if (conversationId.isNotBlank()) {
                     conversationDao.updateStatus(conversationId, "CASCADE_RUN_STATUS_IDLE")
                     _liveDeltas.value = _liveDeltas.value - conversationId
+                    _liveActivity.value = _liveActivity.value - conversationId
+                    scope.launch { onSyncRequired?.invoke(conversationId) }
                 }
             }
 
@@ -153,6 +196,8 @@ class SyncEngine(
                 if (conversationId.isNotBlank()) {
                     conversationDao.updateStatus(conversationId, "CASCADE_RUN_STATUS_IDLE")
                     _liveDeltas.value = _liveDeltas.value - conversationId
+                    _liveActivity.value = _liveActivity.value - conversationId
+                    scope.launch { onSyncRequired?.invoke(conversationId) }
                 }
             }
 
@@ -164,6 +209,8 @@ class SyncEngine(
                 if (conversationId.isNotBlank()) {
                     conversationDao.updateStatus(conversationId, "CASCADE_RUN_STATUS_IDLE")
                     _liveDeltas.value = _liveDeltas.value - conversationId
+                    _liveActivity.value = _liveActivity.value - conversationId
+                    scope.launch { onSyncRequired?.invoke(conversationId) }
                 }
             }
         }

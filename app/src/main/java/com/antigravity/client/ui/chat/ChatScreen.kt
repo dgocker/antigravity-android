@@ -16,6 +16,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -23,14 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.antigravity.client.domain.model.CodeDiff
-import com.antigravity.client.domain.model.MessageDeliveryStatus
-import com.antigravity.client.domain.model.ModelOption
-import com.antigravity.client.domain.model.Step
-import com.antigravity.client.domain.model.ToolCall
-import com.antigravity.client.ui.components.CodeDiffViewer
-import com.antigravity.client.ui.components.ConnectionBadge
-import com.antigravity.client.ui.components.ToolCallCard
+import com.antigravity.client.domain.model.*
+import com.antigravity.client.ui.components.*
 import com.antigravity.client.ui.theme.*
 
 sealed class ConversationBubble(val key: String) {
@@ -168,6 +166,7 @@ fun ChatScreen(
     val steps by viewModel.steps.collectAsStateWithLifecycle()
     val pendingMessages by viewModel.pendingMessages.collectAsStateWithLifecycle()
     val activeDeltaText by viewModel.activeDeltaText.collectAsStateWithLifecycle()
+    val liveActivity by viewModel.liveActivity.collectAsStateWithLifecycle()
     val connectionStatus by viewModel.connectionStatus.collectAsStateWithLifecycle()
     val inputMessage by viewModel.inputMessage.collectAsStateWithLifecycle()
     val quotedSnippet by viewModel.quotedSnippet.collectAsStateWithLifecycle()
@@ -178,9 +177,14 @@ fun ChatScreen(
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
     val selectedEffort by viewModel.selectedEffort.collectAsStateWithLifecycle()
 
+    var previewImageUrl by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+
     val lastStep = steps.lastOrNull()
     val isLastStepDone = lastStep?.type == "PLANNER_RESPONSE" && lastStep.status == "DONE"
-    val isRunning = !isLastStepDone && (conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty())
+    val isActivityRunning = liveActivity != null && liveActivity?.activity != "idle"
+    val isRunning = isActivityRunning || (!isLastStepDone && (conversation?.status?.contains("RUNNING", ignoreCase = true) == true || activeDeltaText.isNotEmpty()))
+    val isLiveTurnVisible = isRunning || activeDeltaText.isNotEmpty() || isActivityRunning
     val listState = rememberLazyListState()
 
     // Combine confirmed steps with optimistic pending messages (instant appearance!)
@@ -211,16 +215,19 @@ fun ChatScreen(
     var isInitialScrollDone by remember { mutableStateOf(false) }
 
     val hasEarlier = allBubbles.size > visibleLimit
-    val totalItems = (if (hasEarlier) 1 else 0) + displayedBubbles.size + (if (activeDeltaText.isNotEmpty()) 1 else 0)
+    val totalItems = (if (hasEarlier) 1 else 0) + displayedBubbles.size + (if (isLiveTurnVisible) 1 else 0)
 
-    // Instant jump to bottom on initial load, smooth scroll on new incoming messages
+    // Instant jump to bottom on initial load, smart auto-scroll on new incoming messages
     LaunchedEffect(totalItems) {
         if (totalItems > 0) {
             if (!isInitialScrollDone) {
                 listState.scrollToItem(totalItems - 1)
                 isInitialScrollDone = true
             } else {
-                listState.animateScrollToItem(totalItems - 1)
+                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                if (lastVisible >= totalItems - 4) {
+                    listState.animateScrollToItem(totalItems - 1)
+                }
             }
         }
     }
@@ -410,14 +417,24 @@ fun ChatScreen(
                     items(displayedBubbles, key = { it.key }) { bubble ->
                         when (bubble) {
                             is ConversationBubble.User -> UserBubble(bubble)
-                            is ConversationBubble.Agent -> AgentBubble(bubble)
+                            is ConversationBubble.Agent -> AgentBubble(
+                                bubble = bubble,
+                                viewModel = viewModel,
+                                onPreviewImage = { previewImageUrl = it }
+                            )
                         }
                     }
 
-                    // Live Streaming Delta Item
-                    if (activeDeltaText.isNotEmpty()) {
-                        item(key = "live_stream_delta") {
-                            LiveStreamBubble(text = activeDeltaText)
+                    // Live Streaming Delta / Turn Card Item
+                    if (isLiveTurnVisible) {
+                        item(key = "live_turn_card") {
+                            LiveTurnCard(
+                                activity = liveActivity,
+                                deltaText = activeDeltaText,
+                                onCancel = { viewModel.cancelRun() },
+                                onPreviewImage = { previewImageUrl = it },
+                                resolveServerUrl = { viewModel.getFileRawUrl(it) }
+                            )
                         }
                     }
                 }
@@ -434,6 +451,15 @@ fun ChatScreen(
                 onCancel = { viewModel.cancelRun() }
             )
         }
+    }
+
+    // Full screen image preview dialog
+    previewImageUrl?.let { url ->
+        ImagePreviewDialog(
+            imageUrl = url,
+            onDismiss = { previewImageUrl = null },
+            onDownload = { viewModel.downloadFile(context, url) }
+        )
     }
 }
 
@@ -505,8 +531,61 @@ private fun UserBubble(bubble: ConversationBubble.User) {
     }
 }
 
+fun extractAttachmentsFromBubble(bubble: ConversationBubble.Agent): List<FileAttachment> {
+    val list = mutableListOf<FileAttachment>()
+    val seen = mutableSetOf<String>()
+
+    fun add(path: String?, action: String?) {
+        if (path.isNullOrBlank()) return
+        val clean = path.removePrefix("file://").trim()
+        if (clean in seen || clean.length < 3) return
+        seen.add(clean)
+        val name = clean.substringAfterLast('/')
+        val isImg = name.endsWith(".png", true) || name.endsWith(".jpg", true) ||
+                    name.endsWith(".jpeg", true) || name.endsWith(".webp", true) ||
+                    name.endsWith(".gif", true) || name.endsWith(".svg", true)
+        list.add(FileAttachment(name = name, path = clean, isImage = isImg, action = action))
+    }
+
+    bubble.toolCallsWithResults.forEach { (tool, _) ->
+        when (tool.name) {
+            "write_to_file", "replace_file_content" -> {
+                add(tool.args["TargetFile"] as? String, "File created / modified")
+            }
+            "generate_image" -> {
+                val img = (tool.args["ImageName"] as? String) ?: "generated_image.png"
+                add(img, "Generated Image")
+            }
+            "view_file" -> {
+                val p = tool.args["AbsolutePath"] as? String
+                if (p != null && (p.endsWith(".png", true) || p.endsWith(".jpg", true) || p.endsWith(".pdf", true) || p.endsWith(".apk", true))) {
+                    add(p, "Viewed File")
+                }
+            }
+        }
+    }
+
+    bubble.diffs.forEach { diff ->
+        add(diff.file, "Modified in diff")
+    }
+
+    bubble.messageText?.let { text ->
+        val fileRegex = Regex("""\[(.*?)\]\((file:///[^\s)]+|/[^\s)]+)\)""")
+        fileRegex.findAll(text).forEach { m ->
+            add(m.groupValues[2], "Referenced file")
+        }
+    }
+
+    return list
+}
+
 @Composable
-private fun AgentBubble(bubble: ConversationBubble.Agent) {
+private fun AgentBubble(
+    bubble: ConversationBubble.Agent,
+    viewModel: ChatViewModel,
+    onPreviewImage: (String) -> Unit
+) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -565,7 +644,7 @@ private fun AgentBubble(bubble: ConversationBubble.Agent) {
                             Text("Thinking", color = WarningOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                         Icon(
-                            imageVector = if (showThinking) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            imageVector = if (showThinking) AppIcons.KeyboardArrowUp else AppIcons.KeyboardArrowDown,
                             contentDescription = null,
                             tint = TextSecondary,
                             modifier = Modifier.size(16.dp)
@@ -606,7 +685,7 @@ private fun AgentBubble(bubble: ConversationBubble.Agent) {
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Build,
+                                imageVector = AppIcons.Build,
                                 contentDescription = null,
                                 tint = PrimaryBlue,
                                 modifier = Modifier.size(14.dp)
@@ -622,7 +701,7 @@ private fun AgentBubble(bubble: ConversationBubble.Agent) {
                             )
                         }
                         Icon(
-                            imageVector = if (showToolsList) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            imageVector = if (showToolsList) AppIcons.KeyboardArrowUp else AppIcons.KeyboardArrowDown,
                             contentDescription = null,
                             tint = TextSecondary,
                             modifier = Modifier.size(16.dp)
@@ -650,14 +729,43 @@ private fun AgentBubble(bubble: ConversationBubble.Agent) {
             CodeDiffViewer(diff = diff)
         }
 
-        // Clean Agent Response Text (stripped of system notices)
+        // File Attachments (generated images, created files, downloaded files)
+        val attachments = remember(bubble) { extractAttachmentsFromBubble(bubble) }
+        if (attachments.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                attachments.forEach { file ->
+                    FileAttachmentCard(
+                        file = file,
+                        onDownload = { viewModel.downloadFile(context, file.path, file.name) },
+                        onClick = if (file.isImage) { { onPreviewImage(viewModel.getFileRawUrl(file.path)) } } else null
+                    )
+                }
+            }
+        }
+
+        // Clean Agent Response Text with rich Markdown, clickable links, code blocks, and photos
         if (!bubble.messageText.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = bubble.messageText,
-                color = TextPrimary,
-                fontSize = 14.sp,
-                lineHeight = 20.sp
+            MarkdownText(
+                markdown = bubble.messageText,
+                textColor = TextPrimary,
+                onLinkClick = { url ->
+                    if (url.startsWith("file://") || url.startsWith("/")) {
+                        viewModel.downloadFile(context, url)
+                    } else {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Cannot open: $url", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                onImageClick = onPreviewImage,
+                resolveServerUrl = { viewModel.getFileRawUrl(it) }
             )
         }
 
@@ -681,37 +789,127 @@ private fun AgentBubble(bubble: ConversationBubble.Agent) {
 }
 
 @Composable
-private fun LiveStreamBubble(text: String) {
-    Column(
+private fun LiveTurnCard(
+    activity: LiveActivity?,
+    deltaText: String,
+    onCancel: () -> Unit,
+    onPreviewImage: (String) -> Unit,
+    resolveServerUrl: (String) -> String
+) {
+    Surface(
+        color = DarkSurface,
+        shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(DarkSurface)
-            .padding(12.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 6.dp)
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(12.dp),
-                color = PrimaryBlue,
-                strokeWidth = 2.dp
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "Agent is responding live...",
-                color = PrimaryBlue,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Header: Status indicator + Stop button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val actType = activity?.activity ?: if (deltaText.isNotEmpty()) "generating" else "thinking"
+                    when (actType) {
+                        "tool_running" -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = AccentGreen,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = activity?.detail?.ifBlank { "Executing tool..." } ?: "Executing tool...",
+                                color = AccentGreen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        "generating" -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = PrimaryBlue,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Writing response...",
+                                color = PrimaryBlue,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        else -> {
+                            Icon(
+                                imageVector = AppIcons.Psychology,
+                                contentDescription = null,
+                                tint = WarningOrange,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = activity?.detail?.ifBlank { "Thinking..." } ?: "Thinking...",
+                                color = WarningOrange,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                TextButton(
+                    onClick = onCancel,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(26.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = ErrorRed)
+                ) {
+                    Icon(AppIcons.Close, contentDescription = "Cancel", modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Stop", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            // Actively executing tool parameters
+            if (activity != null && activity.activity == "tool_running" && activity.parameters.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                val cmd = activity.parameters["CommandLine"] as? String
+                val path = (activity.parameters["TargetFile"] as? String) ?: (activity.parameters["AbsolutePath"] as? String)
+                val displayInfo = cmd ?: path
+                if (!displayInfo.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(CodeBg)
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = displayInfo,
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            // Live streaming tokens
+            if (deltaText.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                MarkdownText(
+                    markdown = deltaText,
+                    textColor = TextPrimary,
+                    onImageClick = onPreviewImage,
+                    resolveServerUrl = resolveServerUrl
+                )
+            }
         }
-        Text(
-            text = text,
-            color = TextPrimary,
-            fontSize = 14.sp,
-            lineHeight = 20.sp
-        )
     }
 }
 

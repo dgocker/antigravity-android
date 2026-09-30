@@ -50,6 +50,11 @@ class ChatViewModel(
         .map { it[conversationId] ?: "" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    // Live agent activity (thinking, tool execution) for this specific conversation
+    val liveActivity: StateFlow<LiveActivity?> = syncEngine.liveActivity
+        .map { it[conversationId] }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val quotedSnippet = MutableStateFlow<String?>(null)
     val inputMessage = MutableStateFlow("")
 
@@ -148,6 +153,27 @@ class ChatViewModel(
                 errorState.value = "Failed to send message: ${e.localizedMessage ?: e.message}"
             }
         }
+
+        // Active background sync loop: continuously polls step history while agent is running
+        // so the screen updates live even if network switches or WebSocket encounters latency
+        viewModelScope.launch {
+            var checks = 0
+            while (checks < 90) {
+                kotlinx.coroutines.delay(2000)
+                checks++
+                val isTurnRunning = (conversation.value?.status?.contains("RUNNING", ignoreCase = true) == true) ||
+                                    activeDeltaText.value.isNotEmpty() ||
+                                    (liveActivity.value != null && liveActivity.value?.activity != "idle")
+
+                try {
+                    repository.fetchStepsHistory(conversationId)
+                } catch (_: Exception) {}
+
+                if (!isTurnRunning && checks > 2) {
+                    break
+                }
+            }
+        }
     }
 
     fun cancelRun() {
@@ -174,4 +200,48 @@ class ChatViewModel(
     fun clearError() {
         errorState.value = null
     }
+
+    fun getFileRawUrl(filePath: String): String {
+        val token = tokenStore.getToken() ?: ""
+        var baseUrl = tokenStore.serverUrl.trim().trimEnd('/')
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            baseUrl = "http://$baseUrl"
+        }
+        val cleanPath = filePath.removePrefix("file://")
+        val encodedPath = java.net.URLEncoder.encode(cleanPath, "UTF-8")
+        return "$baseUrl/v1/files/raw?path=$encodedPath&token=$token"
+    }
+
+    fun downloadFile(context: android.content.Context, filePath: String, customFilename: String? = null) {
+        val token = tokenStore.getToken()
+        if (token.isNullOrBlank()) {
+            android.widget.Toast.makeText(context, "Authentication token missing", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        var baseUrl = tokenStore.serverUrl.trim().trimEnd('/')
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            baseUrl = "http://$baseUrl"
+        }
+        val cleanPath = filePath.removePrefix("file://")
+        val encodedPath = java.net.URLEncoder.encode(cleanPath, "UTF-8")
+        val downloadUrl = "$baseUrl/v1/files/raw?path=$encodedPath&download=true&token=$token"
+        val fileName = customFilename ?: cleanPath.substringAfterLast('/').ifEmpty { "downloaded_file" }
+
+        try {
+            val request = android.app.DownloadManager.Request(android.net.Uri.parse(downloadUrl)).apply {
+                setTitle(fileName)
+                setDescription("Downloading $fileName from server")
+                setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+            }
+            val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            dm.enqueue(request)
+            android.widget.Toast.makeText(context, "Скачивание начато: $fileName", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(context, "Ошибка загрузки: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 }
+

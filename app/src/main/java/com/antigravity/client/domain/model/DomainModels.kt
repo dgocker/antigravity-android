@@ -91,3 +91,21 @@ data class PendingUserMessage(
     val baseStepIndex: Int,
     val timestamp: Long = System.currentTimeMillis()
 )
+
+data class LiveActivity(
+    val activity: String = "idle",
+    val toolName: String? = null,
+    val detail: String = "",
+    val parameters: Map<String, Any?> = emptyMap(),
+    val output: String? = null,
+    val durationSeconds: Double? = null,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class FileAttachment(
+    val name: String,
+    val path: String,
+    val isImage: Boolean,
+    val action: String? = null
+)
+
