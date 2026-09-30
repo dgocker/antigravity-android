@@ -44,7 +44,8 @@ interface GatewayApi {
     suspend fun getChatSteps(
         @Path("id") chatId: String,
         @Query("after_step") afterStep: Int? = null,
-        @Query("limit") limit: Int = 50
+        @Query("before_step") beforeStep: Int? = null,
+        @Query("limit") limit: Int = 100
     ): List<NormalizedStepDto>
 
     @GET("v1/events")

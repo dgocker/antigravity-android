@@ -323,12 +323,49 @@ class ChatRepository(
         stepDao.deleteCheckpointSteps(conversationId)
     }
 
-    suspend fun fetchStepsHistory(conversationId: String, afterStep: Int? = null, limit: Int = 100) {
-        stepDao.deleteCheckpointSteps(conversationId)
-        val actualAfterStep = afterStep ?: stepDao.getMaxStepIndex(conversationId)
-        val stepDtos = api.getChatSteps(conversationId, actualAfterStep, limit)
-        if (stepDtos.isEmpty()) return
+    suspend fun getMinStepIndex(conversationId: String): Int? {
+        return stepDao.getMinStepIndex(conversationId)
+    }
 
+    suspend fun getMaxStepIndex(conversationId: String): Int? {
+        return stepDao.getMaxStepIndex(conversationId)
+    }
+
+    suspend fun fetchStepsHistory(conversationId: String, afterStep: Int? = null, limit: Int = 500) {
+        stepDao.deleteCheckpointSteps(conversationId)
+        val maxLocalIndex = stepDao.getMaxStepIndex(conversationId)
+
+        if (afterStep == null && maxLocalIndex == null) {
+            // Fresh load on empty DB: fetch latest steps (tail) so user immediately sees newest messages!
+            val stepDtos = api.getChatSteps(conversationId, afterStep = null, beforeStep = null, limit = limit)
+            saveStepDtos(conversationId, stepDtos)
+            return
+        }
+
+        // Incremental sync starting from highest local step index up to server latest
+        var currentAfter = afterStep ?: maxLocalIndex
+        var iterations = 0
+        while (iterations < 10) {
+            val stepDtos = api.getChatSteps(conversationId, afterStep = currentAfter, beforeStep = null, limit = limit)
+            if (stepDtos.isEmpty()) break
+            saveStepDtos(conversationId, stepDtos)
+            val newMax = stepDtos.maxOfOrNull { it.stepIndex } ?: break
+            if (newMax <= (currentAfter ?: -1)) break
+            currentAfter = newMax
+            if (stepDtos.size < limit) break
+            iterations++
+        }
+    }
+
+    suspend fun fetchEarlierSteps(conversationId: String, beforeStep: Int, limit: Int = 100): Int {
+        val stepDtos = api.getChatSteps(conversationId, afterStep = null, beforeStep = beforeStep, limit = limit)
+        if (stepDtos.isEmpty()) return 0
+        saveStepDtos(conversationId, stepDtos)
+        return stepDtos.size
+    }
+
+    private suspend fun saveStepDtos(conversationId: String, stepDtos: List<NormalizedStepDto>) {
+        if (stepDtos.isEmpty()) return
         val entities = stepDtos.mapNotNull { dto ->
             if (dto.type == "CHECKPOINT" ||
                 dto.content?.contains("<CONTEXT_SUMMARY>") == true ||

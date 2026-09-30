@@ -374,6 +374,8 @@ fun ChatScreen(
     val isCancelling by viewModel.isCancelling.collectAsStateWithLifecycle()
     val errorState by viewModel.errorState.collectAsStateWithLifecycle()
     val isLoadingHistory by viewModel.isLoadingHistory.collectAsStateWithLifecycle()
+    val isFetchingEarlier by viewModel.isFetchingEarlier.collectAsStateWithLifecycle()
+    val hasServerEarlier by viewModel.hasServerEarlier.collectAsStateWithLifecycle()
     val availableModels by viewModel.availableModels.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
     val selectedEffort by viewModel.selectedEffort.collectAsStateWithLifecycle()
@@ -595,12 +597,23 @@ fun ChatScreen(
         }
     }
 
+    // Always jump to bottom when initial history loading completes, ensuring user lands on latest message
+    LaunchedEffect(isLoadingHistory) {
+        if (!isLoadingHistory && totalItems > 0) {
+            listState.scrollToItem(totalItems - 1)
+            isInitialScrollDone = true
+            previousTotalItems = totalItems
+        }
+    }
+
     // Instant jump to bottom on initial load, auto-scroll when new items arrive or live card expands
     LaunchedEffect(bottomContentKey) {
         if (totalItems > 0) {
             if (!isInitialScrollDone) {
                 listState.scrollToItem(totalItems - 1)
-                isInitialScrollDone = true
+                if (!isLoadingHistory) {
+                    isInitialScrollDone = true
+                }
                 previousTotalItems = totalItems
                 return@LaunchedEffect
             }
@@ -807,8 +820,9 @@ fun ChatScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // If there are more earlier messages, show "Load earlier messages" button
-                    if (allBubbles.size > visibleLimit) {
+                    // If there are more earlier messages locally or on server, show "Load earlier messages" button
+                    val showLoadEarlierBtn = allBubbles.size > visibleLimit || hasServerEarlier
+                    if (showLoadEarlierBtn) {
                         item(key = "load_earlier_btn") {
                             val remaining = allBubbles.size - visibleLimit
                             Box(
@@ -817,21 +831,36 @@ fun ChatScreen(
                                     .padding(vertical = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                TextButton(
-                                    onClick = { visibleLimit += 30 },
-                                    colors = ButtonDefaults.textButtonColors(contentColor = PrimaryBlue)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowUp,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
+                                if (isFetchingEarlier) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = PrimaryBlue
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Load earlier messages ($remaining more)",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
+                                } else {
+                                    TextButton(
+                                        onClick = {
+                                            if (allBubbles.size > visibleLimit) {
+                                                visibleLimit += 30
+                                            }
+                                            if (visibleLimit >= allBubbles.size && hasServerEarlier) {
+                                                viewModel.loadEarlierSteps()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.textButtonColors(contentColor = PrimaryBlue)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.KeyboardArrowUp,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (remaining > 0) "Load earlier messages ($remaining more)" else "Load earlier messages from server",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -108,6 +108,30 @@ class ChatViewModel(
     val isCancelling = MutableStateFlow(false)
     val errorState = MutableStateFlow<String?>(null)
     val isLoadingHistory = MutableStateFlow(true)
+    val isFetchingEarlier = MutableStateFlow(false)
+    val hasServerEarlier = MutableStateFlow(true)
+
+    fun loadEarlierSteps() {
+        if (isFetchingEarlier.value || !hasServerEarlier.value) return
+        viewModelScope.launch {
+            val minStep = repository.getMinStepIndex(conversationId) ?: 0
+            if (minStep <= 0) {
+                hasServerEarlier.value = false
+                return@launch
+            }
+            isFetchingEarlier.value = true
+            try {
+                val fetched = repository.fetchEarlierSteps(conversationId, beforeStep = minStep, limit = 100)
+                if (fetched == 0) {
+                    hasServerEarlier.value = false
+                }
+            } catch (e: Exception) {
+                // Ignore network error
+            } finally {
+                isFetchingEarlier.value = false
+            }
+        }
+    }
 
     val availableModels = MutableStateFlow<List<ModelOption>>(DEFAULT_MODELS)
     val selectedModel = MutableStateFlow<String>(tokenStore.selectedModel ?: "gemini-3.8-flash-high")

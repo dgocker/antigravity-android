@@ -128,6 +128,13 @@ class SyncEngine(
                 }
             }
 
+            "sync_seq" -> {
+                val seq = json.optLong("seq", 0L)
+                if (seq > tokenStore.lastReceivedSeq) {
+                    tokenStore.lastReceivedSeq = seq
+                }
+            }
+
             "text_delta" -> {
                 val delta = json.optString("text_delta")
                 if (conversationId.isNotBlank() && delta.isNotEmpty()) {

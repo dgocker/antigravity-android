@@ -38,6 +38,7 @@ interface StepDao {
     fun getStepsForConversation(conversationId: String): Flow<List<StepEntity>>
     suspend fun getStep(conversationId: String, stepIndex: Int): StepEntity?
     suspend fun getMaxStepIndex(conversationId: String): Int?
+    suspend fun getMinStepIndex(conversationId: String): Int?
     suspend fun deleteForConversation(conversationId: String)
     suspend fun deleteCheckpointSteps(conversationId: String)
 }
@@ -377,6 +378,18 @@ class StepDaoImpl(private val dbHelper: AppDatabase) : StepDao {
         val db = dbHelper.readableDatabase
         db.rawQuery(
             "SELECT MAX(stepIndex) FROM steps WHERE conversationId = ?",
+            arrayOf(conversationId)
+        ).use { cursor ->
+            if (cursor.moveToNext() && !cursor.isNull(0)) {
+                cursor.getInt(0)
+            } else null
+        }
+    }
+
+    override suspend fun getMinStepIndex(conversationId: String): Int? = withContext(Dispatchers.IO) {
+        val db = dbHelper.readableDatabase
+        db.rawQuery(
+            "SELECT MIN(stepIndex) FROM steps WHERE conversationId = ?",
             arrayOf(conversationId)
         ).use { cursor ->
             if (cursor.moveToNext() && !cursor.isNull(0)) {
