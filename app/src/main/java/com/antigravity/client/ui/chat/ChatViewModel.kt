@@ -905,6 +905,17 @@ class ChatViewModel(
         }
     }
 
+    fun deleteFailedPendingMessage(pendingId: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteOutboxItem(pendingId)
+                repository.removePendingMessage(conversationId, pendingId)
+            } catch (e: Exception) {
+                errorState.value = "Ошибка удаления: ${e.message}"
+            }
+        }
+    }
+
     private fun retryOutboxQueue() {
         viewModelScope.launch {
             try {

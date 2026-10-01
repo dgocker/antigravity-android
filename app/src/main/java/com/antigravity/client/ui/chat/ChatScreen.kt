@@ -21,6 +21,12 @@ import androidx.compose.ui.graphics.Color
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -83,6 +89,24 @@ private val VOICE_TAG_RE = Regex("""\[Голосовое сообщение:\s*(
 private val IMAGE_TAG_RE = Regex("""\[Изображение:\s*([^ ]+)\s*\(([^,]+),\s*(\d+)\s*KB\)\]""", RegexOption.IGNORE_CASE)
 private val VIDEO_TAG_RE = Regex("""\[Видео:\s*([^ ]+)\s*\(([^,]+),\s*(\d+)\s*KB\)\]""", RegexOption.IGNORE_CASE)
 private val FILE_TAG_RE = Regex("""\[Вложение:\s*([^ ]+)\s*\(([^,]+),\s*(\d+)\s*KB\)\]""", RegexOption.IGNORE_CASE)
+
+fun cleanUserTextForCopy(rawText: String): String {
+    if (rawText.isBlank()) return ""
+    val textWithoutMedia = rawText
+        .replace(IMAGE_TAG_RE, "")
+        .replace(VIDEO_TAG_RE, "")
+        .replace(FILE_TAG_RE, "")
+    val strippedVoice = VOICE_TAG_RE.replace(textWithoutMedia, "").trim()
+    if (strippedVoice.isNotBlank()) {
+        return strippedVoice
+    }
+    val voiceMatch = VOICE_TAG_RE.find(rawText)
+    val transcription = voiceMatch?.groupValues?.getOrNull(4)
+    if (!transcription.isNullOrBlank()) {
+        return transcription.trim()
+    }
+    return ""
+}
 
 fun extractAttachmentsFromRawText(rawText: String?): List<Attachment> {
     if (rawText.isNullOrBlank()) return emptyList()
@@ -337,7 +361,7 @@ fun processStepsToBubbles(
             val combinedText = when {
                 currentAgent.messageText.isNullOrBlank() -> newText
                 newText.isNullOrBlank() -> currentAgent.messageText
-                else -> "${currentAgent.messageText}\n\n$newText"
+                else -> "${currentAgent.messageText}\n\n---\n\n$newText"
             }
             currentAgent = currentAgent.copy(
                 thinking = combinedThinking,
@@ -884,7 +908,8 @@ fun ChatScreen(
                                     previewImageUrl = url
                                     previewImageName = name
                                 },
-                                onRetry = { viewModel.retryPendingMessage(bubble.id) }
+                                onRetry = { viewModel.retryPendingMessage(bubble.id) },
+                                onDeleteFailed = { viewModel.deleteFailedPendingMessage(bubble.id) }
                             )
                             is ConversationBubble.Agent -> {
                                 val isLastBubble = bubble == displayedBubbles.lastOrNull()
@@ -1224,23 +1249,34 @@ fun ChatScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UserBubble(
     bubble: ConversationBubble.User,
     audioPlayer: AudioPlayer,
     resolveServerUrl: (String) -> String,
     onPreviewImage: (String, String?) -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onDeleteFailed: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    var showContextMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End
     ) {
-        Surface(
-            color = PrimaryBlue,
-            shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
-            modifier = Modifier.widthIn(max = 320.dp)
-        ) {
+        Box {
+            Surface(
+                color = PrimaryBlue,
+                shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .combinedClickable(
+                        onClick = { },
+                        onLongClick = { showContextMenu = true }
+                    )
+            ) {
             Column(modifier = Modifier.padding(10.dp)) {
                 // Attachments
                 if (bubble.attachments.isNotEmpty()) {
@@ -1383,6 +1419,44 @@ private fun UserBubble(
                 }
             }
         }
+
+            DropdownMenu(
+                expanded = showContextMenu,
+                onDismissRequest = { showContextMenu = false },
+                modifier = Modifier.background(DarkSurfaceVariant)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Копировать текст", color = TextPrimary, fontSize = 14.sp) },
+                    leadingIcon = {
+                        Icon(AppIcons.ContentCopy, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                    },
+                    onClick = {
+                        showContextMenu = false
+                        val clean = cleanUserTextForCopy(bubble.text)
+                        if (clean.isNotBlank()) {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("User message", clean)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Нет текста для копирования", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                if (bubble.status == MessageDeliveryStatus.FAILED && onDeleteFailed != null) {
+                    DropdownMenuItem(
+                        text = { Text("Удалить", color = ErrorRed, fontSize = 14.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(18.dp))
+                        },
+                        onClick = {
+                            showContextMenu = false
+                            onDeleteFailed()
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1419,12 +1493,6 @@ fun extractAttachmentsFromBubble(bubble: ConversationBubble.Agent): List<FileAtt
                     if (clean.startsWith("/")) clean else "/root/.gemini/antigravity-cli/brain/${bubble.conversationId}/$clean.jpg"
                 } ?: "generated_image.png"
                 add(imgPath, "Generated Image")
-            }
-            "view_file" -> {
-                val p = tool.args["AbsolutePath"] as? String
-                if (p != null && (p.endsWith(".png", true) || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".webp", true) || p.endsWith(".pdf", true) || p.endsWith(".apk", true) || p.endsWith(".mp4", true))) {
-                    add(p, "Viewed File")
-                }
             }
         }
     }
@@ -1499,11 +1567,32 @@ private fun AgentBubble(
                     )
                 }
             }
-            Text(
-                text = "Step #${bubble.stepIndex}",
-                color = TextMuted,
-                fontSize = 11.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Step #${bubble.stepIndex}",
+                    color = TextMuted,
+                    fontSize = 11.sp
+                )
+                if (!bubble.messageText.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    IconButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("Agent Response", bubble.messageText)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Ответ скопирован", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = AppIcons.ContentCopy,
+                            contentDescription = "Copy message",
+                            tint = TextMuted,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
         }
 
         // Thinking block if available (collapsed by default)
@@ -1717,26 +1806,28 @@ private fun AgentBubble(
 
         if (displayedMarkdown.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
-            MarkdownText(
-                markdown = displayedMarkdown,
-                textColor = TextPrimary,
-                onLinkClick = { url ->
-                    if (url.startsWith("file://") || url.startsWith("/")) {
-                        viewModel.downloadFile(context, url)
-                    } else {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            SelectionContainer {
+                MarkdownText(
+                    markdown = displayedMarkdown,
+                    textColor = TextPrimary,
+                    onLinkClick = { url ->
+                        if (url.startsWith("file://") || url.startsWith("/")) {
+                            viewModel.downloadFile(context, url)
+                        } else {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open: $url", Toast.LENGTH_SHORT).show()
                             }
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Cannot open: $url", Toast.LENGTH_SHORT).show()
                         }
-                    }
-                },
-                onImageClick = { onPreviewImage(it, null) },
-                resolveServerUrl = { viewModel.getFileRawUrl(it) }
-            )
+                    },
+                    onImageClick = { onPreviewImage(it, null) },
+                    resolveServerUrl = { viewModel.getFileRawUrl(it) }
+                )
+            }
         }
 
         // Error if any

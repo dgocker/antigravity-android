@@ -173,6 +173,13 @@ class ChatRepository(
         pendingMessagesFlow.value = map
     }
 
+    fun removePendingMessage(conversationId: String, id: String) {
+        val map = pendingMessagesFlow.value.toMutableMap()
+        val list = (map[conversationId] ?: emptyList()).filterNot { it.id == id }
+        map[conversationId] = list
+        pendingMessagesFlow.value = map
+    }
+
     fun reconcilePendingMessages(conversationId: String, currentSteps: List<Step>) {
         val map = pendingMessagesFlow.value.toMutableMap()
         val list = map[conversationId] ?: return
