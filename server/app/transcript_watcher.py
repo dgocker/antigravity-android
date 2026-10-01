@@ -11,7 +11,7 @@ from app.hub import hub
 from app.runner import get_transcript_path
 from app.session_detector import is_conversation_active_in_terminal
 from app.step_parser import parse_transcript_line_to_step
-from app.tmux_injector import is_tmux_turn_active
+from app.tmux_injector import is_tmux_turn_active, get_chat_session_name, is_tmux_running
 
 logger = logging.getLogger("agy_gateway.watcher")
 
@@ -125,16 +125,16 @@ class TranscriptWatcher:
                                             "detail": "Thinking...",
                                         })
                                     elif step.status == "DONE" and not step.tool_calls:
-                                        if is_conversation_active_in_terminal(self.conversation_id):
-                                            if is_tmux_turn_active():
-                                                self.is_active = True
-                                                self._idle_consecutive = 0
-                                                await hub.broadcast_live({
-                                                    "type": "agent_activity",
-                                                    "conversation_id": self.conversation_id,
-                                                    "activity": "thinking",
-                                                    "detail": "Thinking...",
-                                                })
+                                        session_name = get_chat_session_name(self.conversation_id)
+                                        if is_tmux_turn_active(session_name):
+                                            self.is_active = True
+                                            self._idle_consecutive = 0
+                                            await hub.broadcast_live({
+                                                "type": "agent_activity",
+                                                "conversation_id": self.conversation_id,
+                                                "activity": "thinking",
+                                                "detail": "Thinking...",
+                                            })
                                         else:
                                             self.is_active = False
                                             await hub.broadcast_live({
@@ -151,8 +151,9 @@ class TranscriptWatcher:
             now = loop.time()
             if now - self._last_active_check > 0.5:
                 self._last_active_check = now
-                if is_conversation_active_in_terminal(self.conversation_id):
-                    tmux_active = is_tmux_turn_active()
+                session_name = get_chat_session_name(self.conversation_id)
+                if is_tmux_running(session_name):
+                    tmux_active = is_tmux_turn_active(session_name)
                     if tmux_active:
                         self._idle_consecutive = 0
                         if not self.is_active:

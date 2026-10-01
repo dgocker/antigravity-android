@@ -45,9 +45,7 @@ def is_tmux_turn_active(session_name: str = "agy") -> bool:
             spinners = ("⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾")
             if any(s in tail for s in spinners):
                 return True
-            if "Running command" in tail or "Thinking..." in tail or "Executing" in tail:
-                return True
-            if "esc to cancel" in tail:
+            if any(k in tail for k in ("Loading...", "Thinking...", "Running command", "Executing ")):
                 return True
     except Exception:
         pass
