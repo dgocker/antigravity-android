@@ -8,7 +8,8 @@ data class Conversation(
     val stepCount: Int,
     val lastModified: String,
     val workspace: String,
-    val parentConversationId: String? = null
+    val parentConversationId: String? = null,
+    val isActive: Boolean = false
 )
 
 data class Step(

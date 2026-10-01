@@ -9,7 +9,8 @@ data class ConversationEntity(
     val lastModified: String,
     val workspace: String,
     val parentConversationId: String? = null,
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isActive: Boolean = false
 )
 
 data class EventEntity(

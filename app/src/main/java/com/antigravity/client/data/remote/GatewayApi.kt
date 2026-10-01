@@ -40,6 +40,22 @@ interface GatewayApi {
         @Path("id") chatId: String
     ): CancelResponseDto
 
+    @POST("v1/chats/{id}/stop")
+    suspend fun stopChat(
+        @Path("id") chatId: String
+    ): ChatActionResponseDto
+
+    @PATCH("v1/chats/{id}")
+    suspend fun patchChatTitle(
+        @Path("id") chatId: String,
+        @Body request: RenameChatRequestDto
+    ): ChatActionResponseDto
+
+    @DELETE("v1/chats/{id}")
+    suspend fun deleteChat(
+        @Path("id") chatId: String
+    ): ChatActionResponseDto
+
     @GET("v1/chats/{id}/steps")
     suspend fun getChatSteps(
         @Path("id") chatId: String,

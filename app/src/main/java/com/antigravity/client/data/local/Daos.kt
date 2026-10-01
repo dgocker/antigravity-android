@@ -20,6 +20,8 @@ interface ConversationDao {
     fun getConversation(id: String): Flow<ConversationEntity?>
     fun searchConversations(query: String): Flow<List<ConversationEntity>>
     suspend fun updateStatus(id: String, status: String)
+    suspend fun updateTitle(id: String, title: String)
+    suspend fun updateActiveStatus(id: String, isActive: Boolean)
     suspend fun delete(id: String)
 }
 
@@ -105,6 +107,7 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
             put("workspace", conversation.workspace)
             put("parentConversationId", conversation.parentConversationId)
             put("updatedAt", conversation.updatedAt)
+            put("isActive", if (conversation.isActive) 1 else 0)
         }
         db.insertWithOnConflict("conversations", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
         notifyChange()
@@ -125,6 +128,7 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
                     put("workspace", conversation.workspace)
                     put("parentConversationId", conversation.parentConversationId)
                     put("updatedAt", conversation.updatedAt)
+                    put("isActive", if (conversation.isActive) 1 else 0)
                 }
                 db.insertWithOnConflict("conversations", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
             }
@@ -185,6 +189,25 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
         notifyChange()
     }
 
+    override suspend fun updateTitle(id: String, title: String) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val cv = ContentValues().apply {
+            put("title", title)
+            put("updatedAt", System.currentTimeMillis())
+        }
+        db.update("conversations", cv, "conversationId = ?", arrayOf(id))
+        notifyChange()
+    }
+
+    override suspend fun updateActiveStatus(id: String, isActive: Boolean) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val cv = ContentValues().apply {
+            put("isActive", if (isActive) 1 else 0)
+        }
+        db.update("conversations", cv, "conversationId = ?", arrayOf(id))
+        notifyChange()
+    }
+
     override suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
         db.delete("conversations", "conversationId = ?", arrayOf(id))
@@ -192,6 +215,8 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
     }
 
     private fun Cursor.toConversationEntity(): ConversationEntity {
+        val actIdx = getColumnIndex("isActive")
+        val isAct = if (actIdx >= 0 && !isNull(actIdx)) getInt(actIdx) == 1 else false
         return ConversationEntity(
             conversationId = getString(getColumnIndexOrThrow("conversationId")),
             title = getString(getColumnIndexOrThrow("title")),
@@ -201,7 +226,8 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
             lastModified = getString(getColumnIndexOrThrow("lastModified")),
             workspace = getString(getColumnIndexOrThrow("workspace")),
             parentConversationId = if (isNull(getColumnIndexOrThrow("parentConversationId"))) null else getString(getColumnIndexOrThrow("parentConversationId")),
-            updatedAt = getLong(getColumnIndexOrThrow("updatedAt"))
+            updatedAt = getLong(getColumnIndexOrThrow("updatedAt")),
+            isActive = isAct
         )
     }
 }

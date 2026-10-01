@@ -62,7 +62,8 @@ class ChatRepository(
                 stepCount = dto.stepCount,
                 lastModified = dto.lastModified,
                 workspace = dto.workspace,
-                parentConversationId = dto.parentConversationId
+                parentConversationId = dto.parentConversationId,
+                isActive = dto.isActive
             )
         }
         conversationDao.insertAll(entities)
@@ -424,6 +425,17 @@ class ChatRepository(
         }
     }
 
+    suspend fun stopSession(chatId: String): Result<Unit> = runCatching {
+        api.stopChat(chatId)
+        conversationDao.updateActiveStatus(chatId, false)
+    }
+
+    suspend fun deleteChat(chatId: String): Result<Unit> = runCatching {
+        api.deleteChat(chatId)
+        conversationDao.delete(chatId)
+        stepDao.deleteForConversation(chatId)
+    }
+
     private fun ConversationEntity.toDomain() = Conversation(
         id = conversationId,
         title = title,
@@ -432,7 +444,8 @@ class ChatRepository(
         stepCount = stepCount,
         lastModified = lastModified,
         workspace = workspace,
-        parentConversationId = parentConversationId
+        parentConversationId = parentConversationId,
+        isActive = isActive
     )
 
     private fun StepEntity.toDomain(gson: Gson): Step {
@@ -543,7 +556,9 @@ class ChatRepository(
 
     suspend fun renameChat(conversationId: String, newTitle: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            api.updateChatTitle(conversationId, RenameChatRequestDto(newTitle)).isSuccessful
+            api.patchChatTitle(conversationId, RenameChatRequestDto(newTitle))
+            conversationDao.updateTitle(conversationId, newTitle)
+            true
         } catch (e: Exception) {
             false
         }

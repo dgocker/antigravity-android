@@ -8,7 +8,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
     context.applicationContext,
     "antigravity.db",
     null,
-    2
+    3
 ) {
     private val _conversationDao = ConversationDaoImpl(this)
     private val _eventDao = EventDaoImpl(this)
@@ -39,7 +39,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
                 lastModified TEXT NOT NULL,
                 workspace TEXT NOT NULL,
                 parentConversationId TEXT,
-                updatedAt INTEGER NOT NULL
+                updatedAt INTEGER NOT NULL,
+                isActive INTEGER NOT NULL DEFAULT 0
             )
         """.trimIndent())
 
@@ -187,6 +188,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(
                 )
             """.trimIndent())
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_outbox_conv ON outbox (conversationId)")
+        }
+        if (oldVersion < 3) {
+            try {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN isActive INTEGER NOT NULL DEFAULT 0")
+            } catch (e: Exception) {}
         }
     }
 

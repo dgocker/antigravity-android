@@ -24,7 +24,18 @@ data class ChatSummaryDto(
     @SerializedName("step_count") val stepCount: Int,
     @SerializedName("last_modified") val lastModified: String,
     @SerializedName("workspace") val workspace: String,
-    @SerializedName("parent_conversation_id") val parentConversationId: String? = null
+    @SerializedName("parent_conversation_id") val parentConversationId: String? = null,
+    @SerializedName("is_active") val isActive: Boolean = false
+)
+
+data class UpdateTitleRequestDto(
+    @SerializedName("title") val title: String
+)
+
+data class ChatActionResponseDto(
+    @SerializedName("status") val status: String,
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("title") val title: String? = null
 )
 
 data class AttachmentRefDto(
