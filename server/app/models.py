@@ -64,6 +64,15 @@ class ChatSummary(BaseModel):
     last_modified: str
     workspace: str
     parent_conversation_id: Optional[str] = None
+    is_active: bool = False
+
+class UpdateChatTitleRequest(BaseModel):
+    title: str
+
+class ChatActionResponse(BaseModel):
+    status: str
+    id: Optional[str] = None
+    title: Optional[str] = None
 
 class ToolCall(BaseModel):
     name: str

@@ -64,6 +64,7 @@ from app.models import (
     TasksResponse,
     DiffResponse,
     RenameChatRequest,
+    ChatActionResponse,
     ContextResponse,
     GenericItem,
     UpdateTranscriptionRequest,
@@ -73,7 +74,13 @@ from app.queue import task_queue
 from app.runner import cancel_active_run, get_transcript_path
 from app.session_detector import is_conversation_active_in_terminal
 from app.step_parser import parse_transcript_line_to_step
-from app.tmux_injector import cancel_tmux_session, inject_message_to_tmux
+from app.tmux_injector import (
+    cancel_tmux_session,
+    inject_message_to_tmux,
+    is_chat_session_running,
+    kill_chat_session,
+    ensure_chat_session,
+)
 from app.transcript_watcher import watcher_manager
 
 logging.basicConfig(
@@ -219,9 +226,12 @@ async def list_chats():
                 except Exception:
                     workspace = raw_uris
 
+            conv_id = r["conversation_id"]
+            is_active = is_chat_session_running(conv_id)
+
             chats.append(
                 ChatSummary(
-                    id=r["conversation_id"],
+                    id=conv_id,
                     title=r["title"],
                     preview=r["preview"],
                     status=r["status"],
@@ -229,6 +239,7 @@ async def list_chats():
                     last_modified=str(r["last_modified_time"]),
                     workspace=workspace,
                     parent_conversation_id=r["parent_conversation_id"] or None,
+                    is_active=is_active,
                 )
             )
         conn.close()
@@ -404,8 +415,9 @@ async def send_message(id: str, req: SendMessageRequest):
 # 6. Cancel running turn
 @app.post("/v1/chats/{id}/cancel", response_model=CancelResponse, dependencies=[Depends(require_auth)])
 async def cancel_chat_run(id: str):
-    if is_conversation_active_in_terminal(id):
-        stopped = await cancel_tmux_session()
+    if is_chat_session_running(id):
+        from app.tmux_injector import get_chat_session_name
+        stopped = await cancel_tmux_session(get_chat_session_name(id))
         if stopped:
             return CancelResponse(conversation_id=id, status="cancelling", run_id="tmux_cancel")
 
@@ -413,6 +425,89 @@ async def cancel_chat_run(id: str):
     if cancelled_run_id:
         return CancelResponse(conversation_id=id, status="cancelling", run_id=cancelled_run_id)
     return CancelResponse(conversation_id=id, status="not_running")
+
+# 6.1 Stop tmux chat session
+@app.post("/v1/chats/{id}/stop", response_model=ChatActionResponse, dependencies=[Depends(require_auth)])
+async def stop_chat_session(id: str):
+    killed = await kill_chat_session(id)
+    await cancel_active_run(id)
+    try:
+        from app.db import get_connection
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE runs SET status = 'interrupted' WHERE conversation_id = ? AND status = 'running'", (id,))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error marking runs interrupted: {e}")
+
+    await hub.broadcast_live({"type": "chat_session_stopped", "conversation_id": id})
+    return ChatActionResponse(status="stopped", id=id)
+
+# 6.2 Rename chat
+@app.patch("/v1/chats/{id}", response_model=ChatActionResponse, dependencies=[Depends(require_auth)])
+async def rename_chat(id: str, req: RenameChatRequest):
+    new_title = req.title.strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+
+    db_path = settings.conversation_summaries_db
+    if os.path.isfile(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("UPDATE conversation_summaries SET title = ? WHERE conversation_id = ?", (new_title, id))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error updating title in conversation_summaries: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    await hub.broadcast_live({"type": "chat_renamed", "conversation_id": id, "title": new_title})
+    return ChatActionResponse(status="updated", id=id, title=new_title)
+
+# 6.3 Delete chat (cascade)
+@app.delete("/v1/chats/{id}", response_model=ChatActionResponse, dependencies=[Depends(require_auth)])
+async def delete_chat(id: str):
+    # 1. Kill tmux session & cancel run
+    await kill_chat_session(id)
+    await cancel_active_run(id)
+
+    # 2. Delete from conversation_summaries.db
+    db_path = settings.conversation_summaries_db
+    if os.path.isfile(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?", (id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error deleting from conversation_summaries: {e}")
+
+    # 3. Delete from gateway.db
+    try:
+        from app.db import get_connection
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM runs WHERE conversation_id = ?", (id,))
+            cur.execute("DELETE FROM events WHERE conversation_id = ?", (id,))
+            cur.execute("DELETE FROM attachments WHERE conversation_id = ?", (id,))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error deleting from gateway.db: {e}")
+
+    # 4. Remove brain directory & presence lock
+    import shutil
+    brain_path = Path(settings.brain_dir) / id
+    if brain_path.exists():
+        shutil.rmtree(brain_path, ignore_errors=True)
+
+    lock_file = Path("/root/.gemini/antigravity-cli/presence") / f"{id}.lock"
+    if lock_file.exists():
+        lock_file.unlink(missing_ok=True)
+
+    await hub.broadcast_live({"type": "chat_deleted", "conversation_id": id})
+    return ChatActionResponse(status="deleted", id=id)
 
 # 7. Get normalized steps for chat
 @app.get("/v1/chats/{id}/steps", response_model=list[NormalizedStep], dependencies=[Depends(require_auth)])

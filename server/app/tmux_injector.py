@@ -53,16 +53,77 @@ def is_tmux_turn_active(session_name: str = "agy") -> bool:
         pass
     return False
 
-async def inject_message_to_tmux(conv_id: str, message: str, session_name: str = "agy") -> Optional[str]:
+def get_chat_session_name(conv_id: str) -> str:
+    if is_tmux_running(f"agy-{conv_id}"):
+        return f"agy-{conv_id}"
+    if is_conversation_active_in_terminal(conv_id) and is_tmux_running("agy"):
+        return "agy"
+    return f"agy-{conv_id}"
+
+def is_chat_session_running(conv_id: str) -> bool:
+    if is_tmux_running(f"agy-{conv_id}"):
+        return True
+    if is_conversation_active_in_terminal(conv_id) and is_tmux_running("agy"):
+        return True
+    return False
+
+async def ensure_chat_session(conv_id: str, workspace: str) -> str:
+    session_name = get_chat_session_name(conv_id)
+    if not is_tmux_running(session_name):
+        session_name = f"agy-{conv_id}"
+        os.makedirs(workspace, exist_ok=True)
+        from app.config import settings
+        # Start interactive session with agy --conversation <conv_id>
+        cmd = [
+            "tmux", "new-session", "-d", "-s", session_name,
+            "-c", workspace,
+            f"{settings.agy_bin} --conversation {conv_id} --add-dir {workspace}"
+        ]
+        proc = await asyncio.create_subprocess_exec(*cmd)
+        await proc.wait()
+        # Give CLI brief moment to initialize
+        await asyncio.sleep(0.5)
+    return session_name
+
+async def kill_chat_session(conv_id: str) -> bool:
+    target_sessions = [f"agy-{conv_id}"]
+    if is_conversation_active_in_terminal(conv_id):
+        target_sessions.append("agy")
+
+    killed = False
+    for s in target_sessions:
+        if is_tmux_running(s):
+            try:
+                proc = await asyncio.create_subprocess_exec("tmux", "kill-session", "-t", s)
+                await proc.wait()
+                killed = True
+                logger.info(f"Killed tmux session '{s}' for conversation {conv_id}")
+            except Exception as e:
+                logger.error(f"Error killing tmux session {s}: {e}")
+    return killed
+
+async def inject_message_to_tmux(
+    conv_id: str,
+    message: str,
+    session_name: Optional[str] = None,
+    workspace: Optional[str] = None,
+) -> Optional[str]:
     """
     Injects prompt text directly into the active tmux session via load-buffer and paste-buffer -p (bracketed paste).
+    Ensures tmux session is created if necessary.
     Returns run_id if successful, None otherwise.
     """
-    if not is_tmux_running(session_name) or not is_conversation_active_in_terminal(conv_id):
+    if not session_name:
+        if workspace:
+            session_name = await ensure_chat_session(conv_id, workspace)
+        else:
+            session_name = get_chat_session_name(conv_id)
+
+    if not is_tmux_running(session_name):
         return None
 
     run_id = f"run_{uuid.uuid4().hex[:12]}"
-    insert_run(run_id=run_id, conversation_id=conv_id, workspace="/root", prompt=message, status="running")
+    insert_run(run_id=run_id, conversation_id=conv_id, workspace=workspace or "/root", prompt=message, status="running")
 
     try:
         # Load prompt text into tmux buffer via stdin to avoid shell escaping issues
