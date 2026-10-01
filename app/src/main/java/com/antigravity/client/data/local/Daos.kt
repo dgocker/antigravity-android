@@ -23,6 +23,7 @@ interface ConversationDao {
     suspend fun updateTitle(id: String, title: String)
     suspend fun updateActiveStatus(id: String, isActive: Boolean)
     suspend fun delete(id: String)
+    suspend fun deleteSubagentConversations()
 }
 
 interface EventDao {
@@ -143,7 +144,10 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
         withContext(Dispatchers.IO) {
             val list = mutableListOf<ConversationEntity>()
             val db = dbHelper.readableDatabase
-            db.rawQuery("SELECT * FROM conversations ORDER BY lastModified DESC", null).use { cursor ->
+            db.rawQuery(
+                "SELECT * FROM conversations WHERE (parentConversationId IS NULL OR parentConversationId = '') ORDER BY lastModified DESC",
+                null
+            ).use { cursor ->
                 while (cursor.moveToNext()) {
                     list.add(cursor.toConversationEntity())
                 }
@@ -169,7 +173,7 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
             val db = dbHelper.readableDatabase
             val wild = "%$query%"
             db.rawQuery(
-                "SELECT * FROM conversations WHERE title LIKE ? OR preview LIKE ? ORDER BY lastModified DESC",
+                "SELECT * FROM conversations WHERE (parentConversationId IS NULL OR parentConversationId = '') AND (title LIKE ? OR preview LIKE ?) ORDER BY lastModified DESC",
                 arrayOf(wild, wild)
             ).use { cursor ->
                 while (cursor.moveToNext()) {
@@ -211,6 +215,12 @@ class ConversationDaoImpl(private val dbHelper: AppDatabase) : ConversationDao {
     override suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
         db.delete("conversations", "conversationId = ?", arrayOf(id))
+        notifyChange()
+    }
+
+    override suspend fun deleteSubagentConversations() = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        db.delete("conversations", "parentConversationId IS NOT NULL AND parentConversationId != ''", null)
         notifyChange()
     }
 

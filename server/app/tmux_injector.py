@@ -77,12 +77,24 @@ async def ensure_chat_session(conv_id: str, workspace: str) -> str:
         cmd = [
             "tmux", "new-session", "-d", "-s", session_name,
             "-c", workspace,
-            f"{settings.agy_bin} --conversation {conv_id} --add-dir {workspace}"
+            f"{settings.agy_bin} --conversation {conv_id} --add-dir {workspace} --dangerously-skip-permissions"
         ]
         proc = await asyncio.create_subprocess_exec(*cmd)
         await proc.wait()
-        # Give CLI brief moment to initialize
-        await asyncio.sleep(0.5)
+        # Wait for interactive prompt to be ready
+        for _ in range(12):
+            await asyncio.sleep(0.25)
+            try:
+                chk = subprocess.run(
+                    ["tmux", "capture-pane", "-t", session_name, "-p"],
+                    capture_output=True,
+                    text=True,
+                    timeout=1,
+                )
+                if chk.returncode == 0 and ">" in chk.stdout:
+                    break
+            except Exception:
+                pass
     return session_name
 
 async def kill_chat_session(conv_id: str) -> bool:

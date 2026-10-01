@@ -66,6 +66,7 @@ class ChatRepository(
                 isActive = dto.isActive
             )
         }
+        conversationDao.deleteSubagentConversations()
         conversationDao.insertAll(entities)
     }
 

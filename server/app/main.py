@@ -196,7 +196,7 @@ async def list_models():
 
 # 3. Chat summaries list
 @app.get("/v1/chats", response_model=list[ChatSummary], dependencies=[Depends(require_auth)])
-async def list_chats():
+async def list_chats(include_subagents: bool = False):
     db_path = settings.conversation_summaries_db
     if not os.path.isfile(db_path):
         return []
@@ -206,10 +206,12 @@ async def list_chats():
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
+        where_clause = "" if include_subagents else "WHERE parent_conversation_id IS NULL OR parent_conversation_id = ''"
         cur.execute(
-            """
+            f"""
             SELECT conversation_id, title, preview, step_count, last_modified_time, workspace_uris, status, parent_conversation_id
             FROM conversation_summaries
+            {where_clause}
             ORDER BY last_modified_time DESC
             """
         )
@@ -385,17 +387,16 @@ async def send_message(id: str, req: SendMessageRequest):
 
     prompt = format_prompt_with_attachments(req.text, req.attachments)
 
-    # Check if this conversation is actively open in the interactive terminal (tmux)
-    if is_conversation_active_in_terminal(id):
-        tmux_run_id = await inject_message_to_tmux(id, prompt)
-        if tmux_run_id:
-            for att in req.attachments:
-                try:
-                    update_attachment_conversation(att.id, id)
-                except Exception:
-                    pass
-            await watcher_manager.ensure_watcher(id)
-            return SendMessageResponse(run_id=tmux_run_id, status="running")
+    # Inject message into active or dedicated per-chat tmux session
+    tmux_run_id = await inject_message_to_tmux(id, prompt, workspace=workspace)
+    if tmux_run_id:
+        for att in req.attachments:
+            try:
+                update_attachment_conversation(att.id, id)
+            except Exception:
+                pass
+        await watcher_manager.ensure_watcher(id)
+        return SendMessageResponse(run_id=tmux_run_id, status="running")
 
     run_id = await task_queue.submit_message(
         conversation_id=id,

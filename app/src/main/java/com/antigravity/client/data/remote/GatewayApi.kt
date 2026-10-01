@@ -13,7 +13,9 @@ interface GatewayApi {
     suspend fun getModels(): List<ModelInfoDto>
 
     @GET("v1/chats")
-    suspend fun getChats(): List<ChatSummaryDto>
+    suspend fun getChats(
+        @Query("include_subagents") includeSubagents: Boolean = false
+    ): List<ChatSummaryDto>
 
     @POST("v1/chats")
     suspend fun createChat(
