@@ -106,6 +106,27 @@ class ChatsViewModel @JvmOverloads constructor(
         }
     }
 
+    fun stopSession(chatId: String) {
+        viewModelScope.launch {
+            repository.stopSession(chatId)
+            refresh()
+        }
+    }
+
+    fun renameChat(chatId: String, newTitle: String) {
+        viewModelScope.launch {
+            repository.renameChat(chatId, newTitle)
+            refresh()
+        }
+    }
+
+    fun deleteChat(chatId: String) {
+        viewModelScope.launch {
+            repository.deleteChat(chatId)
+            refresh()
+        }
+    }
+
     fun clearActionError() {
         _actionError.value = null
     }

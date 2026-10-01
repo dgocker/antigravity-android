@@ -2,6 +2,7 @@ package com.antigravity.client.ui.chats
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,6 +42,10 @@ fun ChatsScreen(
     val isCreatingChat by viewModel.isCreatingChat.collectAsStateWithLifecycle()
 
     var showNewChatDialog by remember { mutableStateOf(false) }
+    var selectedChatForMenu by remember { mutableStateOf<Conversation?>(null) }
+    var chatToRename by remember { mutableStateOf<Conversation?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var chatToDelete by remember { mutableStateOf<Conversation?>(null) }
 
     Scaffold(
         topBar = {
@@ -163,7 +168,8 @@ fun ChatsScreen(
                     items(conversations, key = { it.id }) { chat ->
                         ChatItemCard(
                             conversation = chat,
-                            onClick = { onOpenChat(chat.id) }
+                            onClick = { onOpenChat(chat.id) },
+                            onLongClick = { selectedChatForMenu = chat }
                         )
                     }
                 }
@@ -191,17 +197,194 @@ fun ChatsScreen(
             }
         )
     }
+
+    if (selectedChatForMenu != null) {
+        val chat = selectedChatForMenu!!
+        ModalBottomSheet(
+            onDismissRequest = { selectedChatForMenu = null },
+            containerColor = DarkSurface,
+            contentColor = TextPrimary,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (chat.isActive) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Color(0xFF00E676))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = chat.title.ifBlank { "Untitled Conversation" },
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    text = chat.workspace,
+                    fontSize = 12.sp,
+                    color = TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = DarkSurfaceVariant)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (chat.isActive) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                val id = chat.id
+                                selectedChatForMenu = null
+                                viewModel.stopSession(id)
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null, tint = WarningOrange)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text("Остановить сессию", fontSize = 15.sp, color = TextPrimary)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            val c = chat
+                            selectedChatForMenu = null
+                            renameText = c.title
+                            chatToRename = c
+                        }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryBlue)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Переименовать", fontSize = 15.sp, color = TextPrimary)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            val c = chat
+                            selectedChatForMenu = null
+                            chatToDelete = c
+                        }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = ErrorRed)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Удалить чат", fontSize = 15.sp, color = ErrorRed)
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+
+    if (chatToRename != null) {
+        val chat = chatToRename!!
+        AlertDialog(
+            onDismissRequest = { chatToRename = null },
+            title = { Text("Переименовать чат", color = TextPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val newTitle = renameText.trim()
+                        if (newTitle.isNotEmpty()) {
+                            viewModel.renameChat(chat.id, newTitle)
+                        }
+                        chatToRename = null
+                    }
+                ) {
+                    Text("Сохранить", color = PrimaryBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { chatToRename = null }) {
+                    Text("Отмена", color = TextSecondary)
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
+
+    if (chatToDelete != null) {
+        val chat = chatToDelete!!
+        AlertDialog(
+            onDismissRequest = { chatToDelete = null },
+            title = { Text("Удалить чат?", color = TextPrimary) },
+            text = {
+                Text(
+                    "Сессия в tmux, история сообщений и все файлы чата на сервере будут безвозвратно удалены.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteChat(chat.id)
+                        chatToDelete = null
+                    }
+                ) {
+                    Text("Удалить", color = ErrorRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { chatToDelete = null }) {
+                    Text("Отмена", color = TextSecondary)
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ChatItemCard(
     conversation: Conversation,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -211,15 +394,28 @@ private fun ChatItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = conversation.title.ifBlank { "Untitled Conversation" },
-                    color = TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (conversation.isActive) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Color(0xFF00E676))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = conversation.title.ifBlank { "Untitled Conversation" },
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 RunStatusBadge(status = conversation.status)
             }
@@ -241,12 +437,23 @@ private fun ChatItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = conversation.workspace.substringAfterLast('/'),
-                    color = TextMuted,
-                    fontSize = 11.sp,
-                    maxLines = 1
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = conversation.workspace.substringAfterLast('/'),
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
+                    if (conversation.isActive) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "• Active",
+                            color = Color(0xFF00E676),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
                 Text(
                     text = "${conversation.stepCount} steps • ${conversation.lastModified.take(16).replace('T', ' ')}",
                     color = TextMuted,
