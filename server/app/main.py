@@ -23,12 +23,15 @@ from app.auth import require_auth, verify_token, verify_websocket_auth
 from app.config import settings
 from app.db import (
     create_device_token,
+    delete_chat_override,
+    get_chat_overrides,
     get_events,
     init_db,
     list_device_tokens,
     log_event,
     reconcile_startup_runs,
     revoke_device_token,
+    set_chat_override,
     update_attachment_conversation,
     update_attachment_transcription,
 )
@@ -202,6 +205,7 @@ async def list_chats(include_subagents: bool = False):
         return []
 
     chats: list[ChatSummary] = []
+    overrides = get_chat_overrides()
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -230,11 +234,12 @@ async def list_chats(include_subagents: bool = False):
 
             conv_id = r["conversation_id"]
             is_active = is_chat_session_running(conv_id)
+            title = overrides.get(conv_id) or r["title"]
 
             chats.append(
                 ChatSummary(
                     id=conv_id,
-                    title=r["title"],
+                    title=title,
                     preview=r["preview"],
                     status=r["status"],
                     step_count=r["step_count"],
@@ -451,6 +456,8 @@ async def rename_chat(id: str, req: RenameChatRequest):
     if not new_title:
         raise HTTPException(status_code=400, detail="Title cannot be empty")
 
+    set_chat_override(id, new_title)
+
     db_path = settings.conversation_summaries_db
     if os.path.isfile(db_path):
         try:
@@ -472,6 +479,7 @@ async def delete_chat(id: str):
     # 1. Kill tmux session & cancel run
     await kill_chat_session(id)
     await cancel_active_run(id)
+    delete_chat_override(id)
 
     # 2. Delete from conversation_summaries.db
     db_path = settings.conversation_summaries_db

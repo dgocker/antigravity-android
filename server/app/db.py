@@ -76,6 +76,36 @@ def init_db() -> None:
             );
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_conv ON attachments(conversation_id);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_overrides (
+                conversation_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+        conn.commit()
+
+def set_chat_override(conversation_id: str, title: str) -> None:
+    with _db_lock, get_connection() as conn:
+        conn.execute("""
+            INSERT INTO chat_overrides (conversation_id, title, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(conversation_id) DO UPDATE SET
+                title = excluded.title,
+                updated_at = excluded.updated_at;
+        """, (conversation_id, title))
+        conn.commit()
+
+def get_chat_overrides() -> dict[str, str]:
+    with _db_lock, get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT conversation_id, title FROM chat_overrides")
+        return {r["conversation_id"]: r["title"] for r in cur.fetchall()}
+
+def delete_chat_override(conversation_id: str) -> None:
+    with _db_lock, get_connection() as conn:
+        conn.execute("DELETE FROM chat_overrides WHERE conversation_id = ?", (conversation_id,))
         conn.commit()
 
 def reconcile_startup_runs() -> list[dict[str, Any]]:
