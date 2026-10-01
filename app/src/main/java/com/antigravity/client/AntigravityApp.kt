@@ -36,6 +36,7 @@ class AntigravityApp : Application(), ImageLoaderFactory {
         instance = this
 
         tokenStore = TokenStore(this)
+        com.antigravity.client.util.LocaleHelper.applyLocale(this, tokenStore.appLanguage)
         networkClient = NetworkClient(tokenStore)
 
         try {

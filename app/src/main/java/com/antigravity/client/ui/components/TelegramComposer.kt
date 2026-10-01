@@ -18,10 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.antigravity.client.R
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.text.font.FontFamily
@@ -296,7 +298,7 @@ fun TelegramComposer(
                     }
 
                     Text(
-                        text = if (dragOffset < -50f) "Отпустите для отмены" else "Свайп влево для отмены",
+                        text = if (dragOffset < -50f) stringResource(R.string.cancel) else stringResource(R.string.chat_voice_swipe_to_cancel),
                         color = TextMuted,
                         fontSize = 11.sp
                     )
@@ -335,7 +337,7 @@ fun TelegramComposer(
                 }
 
                 // Text Input Field
-                val placeholderText = if (attachments.isNotEmpty()) "Добавить подпись..." else "Написать сообщение..."
+                val placeholderText = if (attachments.isNotEmpty()) stringResource(R.string.chat_composer_caption_hint) else stringResource(R.string.chat_composer_hint)
                 OutlinedTextField(
                     value = text,
                     onValueChange = onTextChange,

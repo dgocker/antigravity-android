@@ -19,7 +19,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.antigravity.client.R
 import com.antigravity.client.domain.model.Conversation
 import com.antigravity.client.ui.components.ConnectionBadge
 import com.antigravity.client.ui.components.RunStatusBadge
@@ -52,20 +54,20 @@ fun ChatsScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Chats", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.chats_title), fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(8.dp))
                         ConnectionBadge(status = connectionStatus)
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.refresh() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = TextPrimary)
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.files_refresh), tint = TextPrimary)
                     }
                     IconButton(onClick = onNavigateToFiles) {
-                        Icon(AppIcons.Folder, contentDescription = "Files", tint = TextPrimary)
+                        Icon(AppIcons.Folder, contentDescription = stringResource(R.string.files_title), tint = TextPrimary)
                     }
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextPrimary)
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings_title), tint = TextPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -80,7 +82,7 @@ fun ChatsScreen(
                 containerColor = PrimaryBlue,
                 contentColor = TextPrimary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "New Chat")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.chats_new_chat))
             }
         },
         containerColor = DarkBackground
@@ -94,7 +96,7 @@ fun ChatsScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.searchQuery.value = it },
-                placeholder = { Text("Search chats...", color = TextMuted) },
+                placeholder = { Text(stringResource(R.string.chats_search_placeholder), color = TextMuted) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextMuted) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -256,7 +258,7 @@ fun ChatsScreen(
                     ) {
                         Icon(Icons.Default.Stop, contentDescription = null, tint = WarningOrange)
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text("Остановить сессию", fontSize = 15.sp, color = TextPrimary)
+                        Text(stringResource(R.string.chats_stop_session), fontSize = 15.sp, color = TextPrimary)
                     }
                 }
 
@@ -275,7 +277,7 @@ fun ChatsScreen(
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryBlue)
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Переименовать", fontSize = 15.sp, color = TextPrimary)
+                    Text(stringResource(R.string.chats_rename_chat), fontSize = 15.sp, color = TextPrimary)
                 }
 
                 Row(
@@ -292,7 +294,7 @@ fun ChatsScreen(
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = ErrorRed)
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Удалить чат", fontSize = 15.sp, color = ErrorRed)
+                    Text(stringResource(R.string.chats_delete_chat), fontSize = 15.sp, color = ErrorRed)
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -304,7 +306,7 @@ fun ChatsScreen(
         val chat = chatToRename!!
         AlertDialog(
             onDismissRequest = { chatToRename = null },
-            title = { Text("Переименовать чат", color = TextPrimary) },
+            title = { Text(stringResource(R.string.chats_rename_title), color = TextPrimary) },
             text = {
                 OutlinedTextField(
                     value = renameText,
@@ -327,12 +329,12 @@ fun ChatsScreen(
                         chatToRename = null
                     }
                 ) {
-                    Text("Сохранить", color = PrimaryBlue)
+                    Text(stringResource(R.string.save), color = PrimaryBlue)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { chatToRename = null }) {
-                    Text("Отмена", color = TextSecondary)
+                    Text(stringResource(R.string.cancel), color = TextSecondary)
                 }
             },
             containerColor = DarkSurface
@@ -343,10 +345,10 @@ fun ChatsScreen(
         val chat = chatToDelete!!
         AlertDialog(
             onDismissRequest = { chatToDelete = null },
-            title = { Text("Удалить чат?", color = TextPrimary) },
+            title = { Text(stringResource(R.string.chats_delete_confirm_title), color = TextPrimary) },
             text = {
                 Text(
-                    "Сессия в tmux, история сообщений и все файлы чата на сервере будут безвозвратно удалены.",
+                    stringResource(R.string.chats_delete_confirm_message),
                     color = TextSecondary
                 )
             },
@@ -357,12 +359,12 @@ fun ChatsScreen(
                         chatToDelete = null
                     }
                 ) {
-                    Text("Удалить", color = ErrorRed)
+                    Text(stringResource(R.string.delete), color = ErrorRed)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { chatToDelete = null }) {
-                    Text("Отмена", color = TextSecondary)
+                    Text(stringResource(R.string.cancel), color = TextSecondary)
                 }
             },
             containerColor = DarkSurface
@@ -447,7 +449,7 @@ private fun ChatItemCard(
                     if (conversation.isActive) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "• Active",
+                            text = "• " + stringResource(R.string.chats_session_active),
                             color = Color(0xFF00E676),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold

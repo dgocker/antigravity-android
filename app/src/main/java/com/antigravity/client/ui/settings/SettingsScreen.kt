@@ -18,11 +18,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.antigravity.client.R
 import com.antigravity.client.ui.components.ConnectionBadge
 import com.antigravity.client.ui.theme.*
 
@@ -38,6 +40,7 @@ fun SettingsScreen(
     val newGeneratedToken by viewModel.newGeneratedToken.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val trustSelfSigned by viewModel.trustSelfSigned.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var showCreateTokenDialog by remember { mutableStateOf(false) }
@@ -129,6 +132,61 @@ fun SettingsScreen(
                                 uncheckedTrackColor = DarkSurfaceVariant
                             )
                         )
+                    }
+                }
+            }
+
+            // Language Selection Section
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(AppIcons.Info, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.settings_language),
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val languages = listOf(
+                        "system" to stringResource(R.string.settings_language_system),
+                        "en" to stringResource(R.string.settings_language_en),
+                        "ru" to stringResource(R.string.settings_language_ru)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        languages.forEach { (code, title) ->
+                            val isSelected = appLanguage == code
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.setAppLanguage(code, context) },
+                                label = {
+                                    Text(
+                                        text = title,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryBlue,
+                                    selectedLabelColor = TextPrimary,
+                                    containerColor = DarkSurfaceVariant,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
                     }
                 }
             }

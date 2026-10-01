@@ -1,0 +1,92 @@
+<resources>
+    <string name="app_name">Antigravity</string>
+
+    <!-- General -->
+    <string name="cancel">Отмена</string>
+    <string name="save">Сохранить</string>
+    <string name="delete">Удалить</string>
+    <string name="rename">Переименовать</string>
+    <string name="stop">Остановить</string>
+    <string name="confirm">Подтвердить</string>
+    <string name="copy">Копировать</string>
+    <string name="copied">Скопировано</string>
+    <string name="retry">Повторить</string>
+    <string name="loading">Загрузка…</string>
+    <string name="error">Ошибка</string>
+    <string name="ok">OK</string>
+    <string name="close">Закрыть</string>
+    <string name="search">Поиск</string>
+    <string name="download">Скачать</string>
+
+    <!-- Chats Screen -->
+    <string name="chats_title">Чаты</string>
+    <string name="chats_search_placeholder">Поиск чатов…</string>
+    <string name="chats_new_chat">Новый чат</string>
+    <string name="chats_empty_title">Пока нет чатов</string>
+    <string name="chats_empty_subtitle">Нажмите +, чтобы начать новую сессию</string>
+    <string name="chats_session_active">Активна</string>
+    <string name="chats_session_stopped">Остановлена</string>
+    <string name="chats_stop_session">Остановить сессию</string>
+    <string name="chats_rename_chat">Переименовать чат</string>
+    <string name="chats_delete_chat">Удалить чат</string>
+    <string name="chats_rename_title">Переименовать чат</string>
+    <string name="chats_rename_prompt">Введите новое название</string>
+    <string name="chats_delete_confirm_title">Удалить чат?</string>
+    <string name="chats_delete_confirm_message">Это действие навсегда удалит историю переписки и завершит фоновую сессию на сервере.</string>
+    <string name="chats_active_count">активных</string>
+
+    <!-- Chat Screen -->
+    <string name="chat_agent">Agent</string>
+    <string name="chat_in_progress">В процессе…</string>
+    <string name="chat_step">Шаг #%1$d</string>
+    <string name="chat_thinking">Размышления</string>
+    <string name="chat_executed_tools">Выполнено %1$d инструментов</string>
+    <string name="chat_modified_files">Изменено %1$d файлов</string>
+    <string name="chat_load_image">Нажмите для загрузки</string>
+    <string name="chat_copy_text">Копировать текст</string>
+    <string name="chat_copy_response">Копировать ответ</string>
+    <string name="chat_text_copied">Текст скопирован</string>
+    <string name="chat_no_text_to_copy">Нет текста для копирования</string>
+    <string name="chat_retry_button">Повторить ↻</string>
+    <string name="chat_composer_hint">Написать сообщение…</string>
+    <string name="chat_composer_caption_hint">Добавить подпись…</string>
+    <string name="chat_attach_camera">Сделать фото</string>
+    <string name="chat_attach_gallery">Фото и видео</string>
+    <string name="chat_attach_file">Документ</string>
+    <string name="chat_voice_recording">Запись…</string>
+    <string name="chat_voice_swipe_to_cancel">&lt; Смахните для отмены</string>
+    <string name="chat_voice_transcription">Расшифровка аудио:</string>
+    <string name="chat_camera_permission_required">Требуется доступ к камере</string>
+    <string name="chat_mic_permission_required">Требуется доступ к микрофону</string>
+    <string name="chat_model_selection">Выбор модели и режима</string>
+    <string name="chat_effort">Глубина размышлений</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_language">Язык приложения</string>
+    <string name="settings_language_system">Как в системе</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_ru">Русский</string>
+    <string name="settings_connection">Подключение</string>
+    <string name="settings_server_url">Адрес сервера</string>
+    <string name="settings_token">Токен доступа</string>
+    <string name="settings_workspace">Рабочая директория</string>
+    <string name="settings_trust_self_signed">Доверять самоподписанным сертификатам</string>
+    <string name="settings_device_name">Имя устройства</string>
+    <string name="settings_disconnect">Отключиться</string>
+    <string name="settings_about">О приложении</string>
+    <string name="settings_version">Версия</string>
+
+    <!-- Files Screen -->
+    <string name="files_title">Проводник файлов</string>
+    <string name="files_empty">В папке нет файлов</string>
+    <string name="files_refresh">Обновить</string>
+
+    <!-- Connection Screen -->
+    <string name="connection_title">Подключение к Antigravity</string>
+    <string name="connection_connect">Подключиться</string>
+    <string name="connection_status_connected">Подключено</string>
+    <string name="connection_status_connecting">Подключение…</string>
+    <string name="connection_status_disconnected">Отключено</string>
+    <string name="connection_status_error">Ошибка подключения</string>
+</resources>

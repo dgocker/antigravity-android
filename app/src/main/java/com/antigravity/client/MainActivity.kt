@@ -21,6 +21,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        val app = application as? AntigravityApp
+        app?.tokenStore?.appLanguage?.let { lang ->
+            com.antigravity.client.util.LocaleHelper.applyLocale(this, lang)
+        }
         setContent {
             AntigravityTheme {
                 Surface(

@@ -11,6 +11,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import com.antigravity.client.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -162,14 +164,14 @@ fun ImageAttachmentCard(
                         ) {
                             Icon(
                                 imageVector = AppIcons.Download,
-                                contentDescription = "Load image",
+                                contentDescription = stringResource(R.string.chat_load_image),
                                 tint = TextPrimary,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Нажмите для загрузки",
+                            text = stringResource(R.string.chat_load_image),
                             color = TextSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium

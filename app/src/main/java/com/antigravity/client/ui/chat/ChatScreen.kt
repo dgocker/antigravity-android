@@ -29,6 +29,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import com.antigravity.client.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -1408,7 +1410,7 @@ private fun UserBubble(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Повторить ↻",
+                                    text = stringResource(R.string.chat_retry_button),
                                     color = TextPrimary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -1426,7 +1428,7 @@ private fun UserBubble(
                 modifier = Modifier.background(DarkSurfaceVariant)
             ) {
                 DropdownMenuItem(
-                    text = { Text("Копировать текст", color = TextPrimary, fontSize = 14.sp) },
+                    text = { Text(stringResource(R.string.chat_copy_text), color = TextPrimary, fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(AppIcons.ContentCopy, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
                     },
@@ -1437,15 +1439,15 @@ private fun UserBubble(
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("User message", clean)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.chat_text_copied), Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Нет текста для копирования", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.chat_no_text_to_copy), Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
                 if (bubble.status == MessageDeliveryStatus.FAILED && onDeleteFailed != null) {
                     DropdownMenuItem(
-                        text = { Text("Удалить", color = ErrorRed, fontSize = 14.sp) },
+                        text = { Text(stringResource(R.string.delete), color = ErrorRed, fontSize = 14.sp) },
                         leadingIcon = {
                             Icon(Icons.Default.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(18.dp))
                         },
@@ -1560,7 +1562,7 @@ private fun AgentBubble(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "В процессе...",
+                        text = stringResource(R.string.chat_in_progress),
                         color = AccentGreen,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
@@ -1569,7 +1571,7 @@ private fun AgentBubble(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "Step #${bubble.stepIndex}",
+                    text = stringResource(R.string.chat_step, bubble.stepIndex),
                     color = TextMuted,
                     fontSize = 11.sp
                 )
@@ -1580,13 +1582,13 @@ private fun AgentBubble(
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("Agent Response", bubble.messageText)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Ответ скопирован", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.chat_text_copied), Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
                             imageVector = AppIcons.ContentCopy,
-                            contentDescription = "Copy message",
+                            contentDescription = stringResource(R.string.chat_copy_response),
                             tint = TextMuted,
                             modifier = Modifier.size(14.dp)
                         )

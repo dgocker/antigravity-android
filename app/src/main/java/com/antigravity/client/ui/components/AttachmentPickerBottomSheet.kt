@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.antigravity.client.R
 import com.antigravity.client.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,7 +37,7 @@ fun AttachmentPickerBottomSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Прикрепить вложение",
+                text = stringResource(R.string.chat_attach_gallery),
                 color = TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
@@ -48,7 +50,7 @@ fun AttachmentPickerBottomSheet(
             ) {
                 PickerOptionItem(
                     icon = AppIcons.CameraAlt,
-                    label = "Камера",
+                    label = stringResource(R.string.chat_attach_camera),
                     onClick = {
                         onDismiss()
                         onPickCamera()
@@ -56,7 +58,7 @@ fun AttachmentPickerBottomSheet(
                 )
                 PickerOptionItem(
                     icon = AppIcons.Image,
-                    label = "Галерея",
+                    label = stringResource(R.string.chat_attach_gallery),
                     onClick = {
                         onDismiss()
                         onPickGallery()
@@ -64,7 +66,7 @@ fun AttachmentPickerBottomSheet(
                 )
                 PickerOptionItem(
                     icon = AppIcons.Description,
-                    label = "Файл",
+                    label = stringResource(R.string.chat_attach_file),
                     onClick = {
                         onDismiss()
                         onPickFile()

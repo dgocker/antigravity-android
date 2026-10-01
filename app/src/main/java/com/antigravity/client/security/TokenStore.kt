@@ -22,6 +22,7 @@ class TokenStore(
         private const val KEY_LAST_SEQ = "last_received_seq"
         private const val KEY_DEFAULT_WORKSPACE = "default_workspace"
         private const val KEY_TRUST_SELF_SIGNED = "trust_self_signed"
+        private const val KEY_APP_LANGUAGE = "app_language"
 
         const val DEFAULT_SERVER_URL = "http://127.0.0.1:8765"
         const val DEFAULT_WORKSPACE = "/root/agy-workspaces"
@@ -90,4 +91,8 @@ class TokenStore(
     var trustSelfSigned: Boolean
         get() = prefs.getBoolean(KEY_TRUST_SELF_SIGNED, false)
         set(value) = prefs.edit().putBoolean(KEY_TRUST_SELF_SIGNED, value).apply()
+
+    var appLanguage: String
+        get() = prefs.getString(KEY_APP_LANGUAGE, "system") ?: "system"
+        set(value) = prefs.edit().putString(KEY_APP_LANGUAGE, value).apply()
 }

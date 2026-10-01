@@ -30,6 +30,13 @@ class SettingsViewModel @JvmOverloads constructor(
     val newGeneratedToken = MutableStateFlow<String?>(null)
     val errorMessage = MutableStateFlow<String?>(null)
     val trustSelfSigned = MutableStateFlow(tokenStore.trustSelfSigned)
+    val appLanguage = MutableStateFlow(tokenStore.appLanguage)
+
+    fun setAppLanguage(languageCode: String, context: android.content.Context) {
+        tokenStore.appLanguage = languageCode
+        appLanguage.value = languageCode
+        com.antigravity.client.util.LocaleHelper.applyLocale(context, languageCode)
+    }
 
     fun toggleTrustSelfSigned(trust: Boolean) {
         tokenStore.trustSelfSigned = trust
