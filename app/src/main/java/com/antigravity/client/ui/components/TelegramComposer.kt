@@ -30,6 +30,7 @@ import com.antigravity.client.audio.AudioRecorder
 import com.antigravity.client.audio.AudioRecordingResult
 import com.antigravity.client.data.remote.dto.SlashCommandDto
 import com.antigravity.client.domain.model.Attachment
+import com.antigravity.client.domain.model.AttachmentUploadState
 import com.antigravity.client.ui.theme.*
 
 @Composable
@@ -359,17 +360,30 @@ fun TelegramComposer(
                 val hasContent = text.isNotBlank() || attachments.isNotEmpty()
 
                 if (hasContent) {
+                    val hasActiveUploads = attachments.any { it.uploadState == AttachmentUploadState.UPLOADING }
                     IconButton(
                         onClick = onSend,
+                        enabled = !hasActiveUploads,
                         modifier = Modifier
                             .size(44.dp)
-                            .background(PrimaryBlue, shape = CircleShape)
+                            .background(
+                                if (hasActiveUploads) PrimaryBlue.copy(alpha = 0.4f) else PrimaryBlue,
+                                shape = CircleShape
+                            )
                     ) {
-                        Icon(
-                            imageVector = AppIcons.ArrowUpward,
-                            contentDescription = "Send",
-                            tint = TextPrimary
-                        )
+                        if (hasActiveUploads) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = TextPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = AppIcons.ArrowUpward,
+                                contentDescription = "Send",
+                                tint = TextPrimary
+                            )
+                        }
                     }
                 } else if (isRunning) {
                     IconButton(

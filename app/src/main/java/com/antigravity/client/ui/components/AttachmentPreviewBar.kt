@@ -120,10 +120,18 @@ fun AttachmentPreviewChip(
             ) {
                 CircularProgressIndicator(
                     progress = { attachment.uploadProgress },
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(28.dp),
                     color = PrimaryBlue,
-                    strokeWidth = 2.dp
+                    strokeWidth = 2.5.dp
                 )
+                if (attachment.uploadProgress > 0f) {
+                    Text(
+                        text = "${(attachment.uploadProgress * 100).toInt()}%",
+                        color = TextPrimary,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 

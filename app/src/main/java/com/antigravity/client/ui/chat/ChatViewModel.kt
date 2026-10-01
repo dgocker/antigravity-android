@@ -677,17 +677,50 @@ class ChatViewModel(
                     sizeBytes = cacheFile.length()
                 }
 
+                val attId = UUID.randomUUID().toString()
                 val att = Attachment(
-                    id = UUID.randomUUID().toString(),
+                    id = attId,
                     conversationId = conversationId,
                     type = type,
                     fileName = fileName,
                     mimeType = mimeType,
                     size = sizeBytes,
                     localUri = cacheFile.absolutePath,
-                    uploadState = AttachmentUploadState.PENDING
+                    uploadState = AttachmentUploadState.UPLOADING,
+                    uploadProgress = 0.2f
                 )
                 pendingAttachments.value = pendingAttachments.value + att
+
+                // Start immediate background upload to gateway
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        pendingAttachments.value = pendingAttachments.value.map {
+                            if (it.id == attId) it.copy(uploadProgress = 0.6f) else it
+                        }
+                        val resp = repository.uploadAttachment(
+                            file = cacheFile,
+                            mimeType = mimeType,
+                            conversationId = conversationId,
+                            transcription = null,
+                            duration = null
+                        )
+                        pendingAttachments.value = pendingAttachments.value.map {
+                            if (it.id == attId) it.copy(
+                                serverId = resp.id,
+                                remoteUrl = resp.storagePath,
+                                uploadState = AttachmentUploadState.COMPLETED,
+                                uploadProgress = 1.0f
+                            ) else it
+                        }
+                    } catch (e: Exception) {
+                        pendingAttachments.value = pendingAttachments.value.map {
+                            if (it.id == attId) it.copy(
+                                uploadState = AttachmentUploadState.FAILED,
+                                uploadProgress = 0f
+                            ) else it
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 errorState.value = "Ошибка вложения файла: ${e.message}"
             }

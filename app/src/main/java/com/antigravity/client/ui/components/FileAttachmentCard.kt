@@ -3,9 +3,11 @@ package com.antigravity.client.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -115,6 +117,8 @@ fun ImageAttachmentCard(
     onDownload: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var isLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
+
     Surface(
         color = DarkSurfaceVariant,
         shape = RoundedCornerShape(12.dp),
@@ -126,17 +130,52 @@ fun ImageAttachmentCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 180.dp, max = 320.dp)
+                    .height(200.dp)
                     .background(DarkSurfaceElevated)
-                    .clickable { onPreviewImage(imageUrl) },
+                    .clickable {
+                        if (isLoaded) {
+                            onPreviewImage(imageUrl)
+                        } else {
+                            isLoaded = true
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
-                coil.compose.AsyncImage(
-                    model = imageUrl,
-                    contentDescription = file.name,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (isLoaded) {
+                    coil.compose.AsyncImage(
+                        model = imageUrl,
+                        contentDescription = file.name,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(PrimaryBlue.copy(alpha = 0.85f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = AppIcons.Download,
+                                contentDescription = "Load image",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Нажмите для загрузки",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
             Row(
                 modifier = Modifier
