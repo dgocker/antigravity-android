@@ -13,6 +13,18 @@ A native, high-performance, offline-first Android control panel and IDE-like cli
 
 ## 🌟 Key Features
 
+- **Isolated Per-Chat Tmux Sessions**: Each conversation runs in its own dedicated, isolated `agy-<conversation_id>` tmux session so background processes don't linger invisibly in RAM. The chat history screen displays real-time `• Active` session indicators, and long-tapping any chat opens a Telegram-style context sheet to Stop Session (`tmux kill-session`), Rename (synced across server and local database), or Cascade-Delete.
+- **Telegram-Style Bubble Context Menu & Clean Copy**:
+  - Long-press on user messages: copy clean text (automatically stripping attachment/voice metadata tags) or delete failed messages (only when delivery failed).
+  - One-tap copy button in agent header: copies the full clean Markdown response (including code blocks and formatting, strictly omitting `thinking`, tool calls, and diffs).
+  - Native text selection handles powered by `SelectionContainer` to finger-select arbitrary snippets of code or text.
+  - Turn dividers: distinct agent text responses within the same turn are clearly segmented with markdown dividers.
+- **Telegram-Style Media & Upload Progress**:
+  - Immediate background uploads upon picking attachments with animated circular progress percentage directly on composer chips.
+  - Send button disabled with loading spinner while attachments are uploading to guarantee 100% upload completion before dispatch.
+  - On-demand Telegram-style image loading: blurred placeholder with a centered circular download button that reveals and caches full images when tapped.
+  - Strict `view_file` hygiene: images and files inspected by the agent via `view_file` stay exclusively within collapsible `Executed tools` and never leak into inline chat attachments.
+- **Full Localization (English & Russian)**: Complete 100% string extraction into `res/values/strings.xml` and `res/values-ru/strings.xml`, with an in-app language switcher in Settings (**System Default**, **English**, **Русский**).
 - **Offline-First Resilience**: Antigravity runs continuously on the server regardless of phone connectivity. If connectivity drops or the app is killed, reconnection automatically replays all missed events via `after=<lastReceivedSeq>` with guaranteed zero duplicates.
 - **Voice Notes & Instant Transcription**: Record and send voice messages directly from the composer. Audio is transcribed seamlessly with instant UI updates and integrated player with duration tracking.
 - **In-Bubble Live Tool Status**: Real-time status (`Running run_command...`, `Done: ...`, etc.) is embedded directly inside the active agent response bubble above the progress indicator, eliminating distracting jumping cards.
