@@ -98,20 +98,16 @@ async def ensure_chat_session(conv_id: str, workspace: str) -> str:
     return session_name
 
 async def kill_chat_session(conv_id: str) -> bool:
-    target_sessions = [f"agy-{conv_id}"]
-    if is_conversation_active_in_terminal(conv_id):
-        target_sessions.append("agy")
-
+    target = f"agy-{conv_id}"
     killed = False
-    for s in target_sessions:
-        if is_tmux_running(s):
-            try:
-                proc = await asyncio.create_subprocess_exec("tmux", "kill-session", "-t", s)
-                await proc.wait()
-                killed = True
-                logger.info(f"Killed tmux session '{s}' for conversation {conv_id}")
-            except Exception as e:
-                logger.error(f"Error killing tmux session {s}: {e}")
+    if is_tmux_running(target):
+        try:
+            proc = await asyncio.create_subprocess_exec("tmux", "kill-session", "-t", target)
+            await proc.wait()
+            killed = True
+            logger.info(f"Killed isolated tmux session '{target}' for conversation {conv_id}")
+        except Exception as e:
+            logger.error(f"Error killing tmux session {target}: {e}")
     return killed
 
 async def inject_message_to_tmux(
